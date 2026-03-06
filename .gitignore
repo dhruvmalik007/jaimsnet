@@ -1,0 +1,46 @@
+# Secrets & credentials — never commit these
+.env
+.env.*
+*.secret
+secrets.yaml
+*-secret.yaml
+*-secrets.yaml
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+
+# Infisical local config
+.infisical.json
+
+# Helm chart dependencies & caches
+charts/
+*.tgz
+.helm/
+
+# Terraform state (if used in future)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Editor & OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db
+
+# Temporary & build artifacts
+tmp/
+temp/
+*.tmp
+*.log
+dist/
+build/
+
+# Python virtualenvs (scripts)
+.venv/
+__pycache__/
+*.pyc
