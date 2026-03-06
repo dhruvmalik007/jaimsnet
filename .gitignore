@@ -5,6 +5,9 @@
 secrets.yaml
 *-secret.yaml
 *-secrets.yaml
+# Exception: InfisicalSecret CRD manifests in secrets/ are safe to commit
+!secrets/gateway-secrets.yaml
+!secrets/observability-secrets.yaml
 kubeconfig
 kubeconfig.*
 *.kubeconfig
@@ -17,11 +20,13 @@ charts/
 *.tgz
 .helm/
 
-# Terraform state (if used in future)
+# OpenTofu / Terraform state
 *.tfstate
 *.tfstate.*
 .terraform/
 .terraform.lock.hcl
+.tofu/
+*.tfplan
 
 # Editor & OS
 .DS_Store

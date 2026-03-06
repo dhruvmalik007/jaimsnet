@@ -29,6 +29,7 @@ jAIMSnet manages the complete lifecycle of AI model traffic — from the moment 
 | TLS automation | [cert-manager](https://cert-manager.io) + Let's Encrypt |
 | Ingress & routing | [ingress-nginx](https://kubernetes.github.io/ingress-nginx/) |
 | Response caching | [Redis](https://redis.io) |
+| Infrastructure as Code | [OpenTofu](https://opentofu.org) |
 | Metrics & dashboards *(Phase 2)* | Prometheus + Grafana + Loki |
 | GitOps *(Phase 3)* | ArgoCD |
 | GPU inference *(Phase 2)* | vLLM on AMD MI300X |
@@ -94,33 +95,36 @@ jAIMSnet manages the complete lifecycle of AI model traffic — from the moment 
 
 ## Key Components
 
-### LiteLLM (`litellm/`)
-The core AI gateway. Exposes an OpenAI-compatible API that routes to multiple model providers (OpenAI, Anthropic, Google Gemini, self-hosted vLLM, etc.). Supports:
+### AI Gateway (`gateway/`)
+LiteLLM Proxy is the core AI gateway. Exposes an OpenAI-compatible API that routes to multiple model providers (OpenAI, Anthropic, Google Gemini, self-hosted vLLM, etc.). Supports:
 - Named model aliases (e.g., `fast`, `smart`, `code`)
 - Fallback chains for reliability
 - Redis-backed semantic and exact-match caching
 - Per-key and per-user budget enforcement
 - Native Langfuse integration for observability callbacks
 
-### Langfuse (`langfuse/`)
-Full-stack LLM observability platform. Captures every request and response as a trace, with token counts, latency, cost estimates, and user attribution. Provides:
+Redis runs in the same namespace as the gateway, providing response caching to reduce latency and provider costs.
+
+### Observability (`observability/`)
+Langfuse is the full-stack LLM observability platform. Captures every request and response as a trace, with token counts, latency, cost estimates, and user attribution. Provides:
 - Prompt management and versioning
 - Evaluation pipelines
 - Real-time dashboards
 
-### Infisical (`infisical/`)
-Kubernetes operator that synchronizes secrets from Infisical (cloud or self-hosted) into native Kubernetes Secrets. Each namespace that needs secrets has a corresponding `InfisicalSecret` CRD in `infisical/infisical-secrets/`. **No credentials are stored in this repository.**
+Phase 2 will add Prometheus, Grafana, and Loki for infrastructure-level metrics and log aggregation.
 
-### Redis (`redis/`)
-In-cluster Redis instance used by LiteLLM for response caching. Reduces latency and provider costs for repeated or semantically similar queries.
+### Secrets (`secrets/`)
+Infisical Kubernetes operator that synchronizes secrets from Infisical (cloud or self-hosted) into native Kubernetes Secrets. `InfisicalSecret` CRDs for each namespace (`gateway-secrets.yaml`, `observability-secrets.yaml`) live here. **No credentials are stored in this repository.**
 
-### ingress-nginx (`ingress-nginx/`)
-The cluster ingress controller. All external HTTPS traffic enters through this controller. Routes:
+### Ingress & TLS (`ingress/`)
+ingress-nginx is the cluster ingress controller. All external HTTPS traffic enters through this controller. Routes:
 - `litellm.jAIMS.app` → LiteLLM service
 - `langfuse.jAIMS.app` → Langfuse service
 
-### cert-manager (`cert-manager/`)
-Automates TLS certificate provisioning and renewal using Let's Encrypt. Configured with a `ClusterIssuer` that handles all namespaces.
+cert-manager automates TLS certificate provisioning and renewal using Let's Encrypt. Configured with a `ClusterIssuer` that handles all namespaces.
+
+### Infrastructure as Code (`iac/`)
+OpenTofu configurations for provisioning cloud infrastructure (e.g., DOKS cluster, DNS records, firewall rules). OpenTofu is the open-source Terraform-compatible IaC tool used throughout this project.
 
 ---
 
@@ -128,78 +132,65 @@ Automates TLS certificate provisioning and renewal using Let's Encrypt. Configur
 
 ```
 jaimsnet/
-├── README.md                          # This file
+├── README.md
 ├── .gitignore
 │
 ├── docs/
 │   ├── architecture.md
 │   ├── deployment-guide.md
 │   ├── runbooks/
-│   │   ├── litellm-operations.md
-│   │   ├── langfuse-operations.md
-│   │   └── disaster-recovery.md
 │   └── decisions/
-│       ├── 001-litellm-over-alternatives.md
-│       ├── 002-langfuse-over-phoenix.md
-│       ├── 003-doks-over-droplet.md
-│       └── 004-infisical-for-secrets.md
 │
 ├── cluster/                           # Cluster-level configs
 │   ├── namespaces.yaml
 │   ├── cluster-issuer.yaml
 │   └── README.md
 │
-├── ingress-nginx/
-│   ├── values.yaml
+├── ingress/                           # Ingress + TLS
+│   ├── ingress-nginx-values.yaml
+│   ├── cert-manager-values.yaml
 │   └── README.md
 │
-├── cert-manager/
-│   ├── values.yaml
+├── secrets/                           # Infisical operator + CRDs
+│   ├── operator-values.yaml
+│   ├── gateway-secrets.yaml           # InfisicalSecret for gateway namespace
+│   ├── observability-secrets.yaml     # InfisicalSecret for observability namespace
 │   └── README.md
 │
-├── infisical/
-│   ├── values.yaml
-│   ├── infisical-secrets/
-│   │   ├── litellm-secrets.yaml
-│   │   ├── langfuse-secrets.yaml
-│   │   └── redis-secrets.yaml
+├── gateway/                           # LiteLLM + Redis (AI Gateway)
+│   ├── litellm-values.yaml
+│   ├── litellm-config.yaml            # Routing aliases, models, fallbacks
+│   ├── redis-values.yaml
+│   ├── ingress.yaml                   # litellm.jAIMS.app
 │   └── README.md
 │
-├── redis/
-│   ├── values.yaml
+├── observability/                     # All observability tools
+│   ├── langfuse/
+│   │   ├── values.yaml
+│   │   ├── ingress.yaml               # langfuse.jAIMS.app
+│   │   └── README.md
+│   ├── prometheus/                    # Phase 2
+│   │   └── README.md
+│   ├── grafana/                       # Phase 2
+│   │   └── README.md
+│   ├── loki/                          # Phase 2
+│   │   └── README.md
 │   └── README.md
 │
-├── litellm/
-│   ├── values.yaml
-│   ├── config.yaml
-│   ├── ingress.yaml
+├── iac/                               # OpenTofu IaC
 │   └── README.md
 │
-├── langfuse/
-│   ├── values.yaml
-│   ├── ingress.yaml
+├── gpu/                               # Phase 2: vLLM on MI300X
 │   └── README.md
 │
-├── monitoring/                        # Phase 2
-│   ├── prometheus/
-│   ├── grafana/
-│   ├── loki/
+├── gitops/                            # Phase 3: ArgoCD
 │   └── README.md
 │
-├── gitops/                            # Phase 3
-│   └── README.md
-│
-├── security/                          # Phase 3
-│   └── README.md
-│
-├── gpu/                               # Phase 2
-│   ├── docker-compose.vllm.yaml
-│   ├── gpu-health.sh
+├── security/                          # Phase 3: Trivy, CrowdSec
 │   └── README.md
 │
 └── scripts/
     ├── generate-secrets.sh
-    ├── backup.sh
     └── README.md
 ```
 
@@ -207,7 +198,7 @@ jaimsnet/
 
 ## Quick Start
 
-> **Prerequisites:** `kubectl`, `helm` (≥ 3.12), `doctl` (for DOKS), access to an Infisical project with secrets populated.
+> **Prerequisites:** `kubectl`, `helm` (≥ 3.12), `doctl` (for DOKS), `tofu` (OpenTofu), access to an Infisical project with secrets populated.
 
 ```bash
 # 1. Authenticate to the cluster
@@ -219,7 +210,7 @@ kubectl apply -f cluster/namespaces.yaml
 # 3. Install cert-manager
 helm upgrade --install cert-manager jetstack/cert-manager \
   --namespace cert-manager --create-namespace \
-  -f cert-manager/values.yaml
+  -f ingress/cert-manager-values.yaml
 
 # 4. Apply the ClusterIssuer
 kubectl apply -f cluster/cluster-issuer.yaml
@@ -227,30 +218,29 @@ kubectl apply -f cluster/cluster-issuer.yaml
 # 5. Install ingress-nginx
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
   --namespace ingress-nginx --create-namespace \
-  -f ingress-nginx/values.yaml
+  -f ingress/ingress-nginx-values.yaml
 
 # 6. Install Infisical operator and sync secrets
 helm upgrade --install infisical-operator infisical/infisical-operator \
   --namespace infisical --create-namespace \
-  -f infisical/values.yaml
-kubectl apply -f infisical/infisical-secrets/
+  -f secrets/operator-values.yaml
+kubectl apply -f secrets/gateway-secrets.yaml
+kubectl apply -f secrets/observability-secrets.yaml
 
-# 7. Install Redis
+# 7. Deploy Redis + LiteLLM (AI Gateway)
 helm upgrade --install redis bitnami/redis \
-  --namespace redis --create-namespace \
-  -f redis/values.yaml
-
-# 8. Deploy LiteLLM
+  --namespace gateway --create-namespace \
+  -f gateway/redis-values.yaml
 helm upgrade --install litellm litellm/litellm \
-  --namespace litellm --create-namespace \
-  -f litellm/values.yaml
-kubectl apply -f litellm/ingress.yaml
+  --namespace gateway \
+  -f gateway/litellm-values.yaml
+kubectl apply -f gateway/ingress.yaml
 
-# 9. Deploy Langfuse
+# 8. Deploy Langfuse
 helm upgrade --install langfuse langfuse/langfuse \
-  --namespace langfuse --create-namespace \
-  -f langfuse/values.yaml
-kubectl apply -f langfuse/ingress.yaml
+  --namespace observability --create-namespace \
+  -f observability/langfuse/values.yaml
+kubectl apply -f observability/langfuse/ingress.yaml
 ```
 
 For the full step-by-step guide, see [`docs/deployment-guide.md`](docs/deployment-guide.md).
@@ -270,9 +260,10 @@ For the full step-by-step guide, see [`docs/deployment-guide.md`](docs/deploymen
 ## Contributing
 
 1. All secrets must be stored in Infisical — never in Git.
-2. Each component lives in its own top-level directory with a `README.md`.
-3. Significant architectural decisions are recorded as ADRs in `docs/decisions/`.
-4. See [`docs/deployment-guide.md`](docs/deployment-guide.md) for the operational workflow.
+2. Each component lives in a logical directory with a `README.md`.
+3. Infrastructure is managed with OpenTofu (`iac/`) — never Terraform.
+4. Significant architectural decisions are recorded as ADRs in `docs/decisions/`.
+5. See [`docs/deployment-guide.md`](docs/deployment-guide.md) for the operational workflow.
 
 ---
 
