@@ -554,7 +554,7 @@ weown-tofu-state/
 | Secret | Source | Method |
 |--------|--------|--------|
 | DO API Token | Infisical | Provider data source |
-| DO Spaces credentials | Environment variables | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` |
+| DO Spaces credentials | Environment variables | `DIGITALOCEAN_TOKEN` 
 | SSH keys | DO account | Referenced by ID |
 | State encryption passphrase | Infisical | `TF_VAR_state_encryption_passphrase` |
 
@@ -633,7 +633,7 @@ pip install -e .
 weown-cli deploy  # Follow the interactive prompts
 
 # Verify
-curl -sf https://smoketest.weown.tools && echo "✅ PASS" || echo "❌ FAIL"
+curl -sf https://<deployment-name>.weown.tools && echo "✅ PASS" || echo "❌ FAIL"
 
 # Destroy
 weown-cli destroy <deployment-name>
@@ -658,7 +658,7 @@ echo "✅ Full cycle complete"
 | Pull Request | `tofu plan` — output in PR | Team reviews |
 | Merge to main | `tofu apply` — infrastructure deployed | Auto (post-review) |
 
-### Required GitHub Secrets
+### Required Secrets
 
 | Secret | Description |
 |--------|-------------|
@@ -676,7 +676,7 @@ echo "✅ Full cycle complete"
 
 | Tier | VPC CIDR | Isolation |
 |------|----------|-----------|
-| Lite | `10.10.20.0/24` | Per-customer VPC |
+| Lite | `10.10.20.0/24` | Shared VPC |
 | Pro | `10.10.30.0/24` | Per-customer VPC |
 
 ### Firewall Rules (Lite — Droplet)
@@ -767,14 +767,13 @@ echo "✅ Full cycle complete"
 
 ## Observability Stack (Expanded)
 
-### Grafana Alloy — Telemetry Collector
+### Grafana — Telemetry Collector
 
 | Field | Value |
 |-------|-------|
-| Purpose | Unified telemetry collector (replaces Promtail) |
+| Purpose | Unified telemetry collector |
 | License | Apache 2.0 ✅ |
 | Module | `modules/observability/grafana-alloy/` |
-| Replaces | Promtail (log collection only → full telemetry) |
 | Collects | Logs + metrics + traces (OTLP, Prometheus, Loki) |
 
 ### Mimir — Long-Term Metrics Storage
@@ -886,23 +885,6 @@ Runtime Phase:
 
 ---
 
----
-
-## Cost Matrix
-
-| Component | Lite (per customer) | Pro (per customer) |
-|-----------|--------------------|--------------------|
-| Compute | $12-24/mo (Droplet) | $48/mo (DOKS base) |
-| Load Balancer | — | $12/mo |
-| Database | — (SQLite) | $15/mo (Managed PG) |
-| GPU (shared/dedicated) | $2-5/mo | $50-100/mo |
-| Monitoring | $0.50/mo (shared) | $0/mo (in-cluster) |
-| State backend | $5/mo (shared bucket) | $5/mo (shared bucket) |
-| **Total COGS** | **~$15-30/mo** | **~$130-180/mo** |
-| **Revenue** | **$197/yr (~$16/mo)** | **$1,997/yr (~$166/mo)** |
-
----
-
 ## Troubleshooting
 
 | Issue | Cause | Fix |
@@ -931,12 +913,12 @@ Runtime Phase:
 
 | Resource | Pattern | Example |
 |----------|---------|---------|
-| Droplet | `allm-<customer>` | `allm-acme` |
-| DOKS | `doks-<customer>` | `doks-acme` |
-| Database | `db-<customer>` | `db-acme` |
-| VPC | `weown-<tier>-vpc` | `weown-lite-vpc` |
-| Firewall | `<instance>-fw` | `allm-acme-fw` |
-| State key | `<tier>/<customer>/terraform.tfstate` | `lite/acme/terraform.tfstate` |
+| Droplet | `<tool>-<ccc-id-name>` | `anythingllm-ldc` |
+| DOKS | `doks-<ccc-id-name>` | `doks-ldc` |
+| Database | `db-<ccc-id-name>` | `db-ldc` |
+| VPC | `weown-<ccc-id-name>-vpc` | `weown-ldc-vpc` |
+| Firewall | `<instance>-fw` | `anythingllm-ldc-fw` |
+| State key | `<ccc-id-name>/terraform.tfstate` | `ldc/terraform.tfstate` |
 
 ---
 
@@ -953,10 +935,5 @@ Runtime Phase:
 
 ## License
 
-OpenTofu configurations in this directory are part of the
-[jAIMSnet](https://github.com/CCCbotNet/jaimsnet) repository.
+OpenTofu is licensed under the [MPL-2.0](https://github.com/opentofu/opentofu/blob/main/LICENSE) license.
 
-| Component | License |
-|-----------|---------|
-| OpenTofu | MPL-2.0 |
-| This IaC code | Private (♾️ WeOwnNet 🌐) |
