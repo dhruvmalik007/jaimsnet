@@ -1,10 +1,12 @@
 # Secrets & credentials — never commit these
+
 .env
 .env.*
 *.secret
 secrets.yaml
 *-secret.yaml
 *-secrets.yaml
+
 # Exception: InfisicalSecret CRD manifests in secrets/ are safe to commit
 !secrets/gateway-secrets.yaml
 !secrets/observability-secrets.yaml
@@ -49,3 +51,6 @@ build/
 .venv/
 __pycache__/
 *.pyc
+
+## CLI ADDITIONAL PYTHON build files ##
+**/*.egg-info
