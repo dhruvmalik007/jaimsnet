@@ -1,0 +1,94 @@
+#cloud-config
+hostname: ${hostname}
+
+package_update: true
+package_upgrade: true
+
+# Install prerequisite tools
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+
+write_files:
+  # Configure Docker Log Rotation
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+
+  # Caddy Reverse Proxy Configuration
+  - path: /etc/caddy/Caddyfile
+    content: |
+      ${fqdn != "" ? fqdn : ":80"} {
+        reverse_proxy 127.0.0.1:3001
+      }
+
+  # Modular Docker Compose file for AnythingLLM and Watchtower
+  - path: /opt/anythingllm/docker-compose.yml
+    owner: root:root
+    permissions: '0644'
+    content: |
+      version: '3.8'
+      services:
+        anythingllm:
+          image: mintplexlabs/anythingllm:latest
+          container_name: anythingllm
+          restart: unless-stopped
+          ports:
+            - "3001:3001"
+          volumes:
+            - ./storage:/app/server/storage
+            - /var/run/docker.sock:/var/run/docker.sock
+          deploy:
+            resources:
+              limits:
+                memory: 2g
+        
+        # Watchtower is optional. If enabled via the Terraform variable, it runs alongside AnythingLLM.
+        # Otherwise, the container starts but we can ignore it if we just want basic deployment testing.
+        watchtower:
+          image: containrrr/watchtower
+          container_name: watchtower
+          restart: unless-stopped
+          volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+          command: --interval 3600 anythingllm
+          profiles:
+            - "${enable_watchtower == true ? "default" : "disabled"}"
+
+runcmd:
+  # Install Caddy
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+  - apt-get update
+  - apt-get install -y caddy
+  - systemctl enable caddy
+  - systemctl restart caddy
+
+  # Install Docker using the official repository
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  - chmod a+r /etc/apt/keyrings/docker.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable docker
+  - systemctl start docker
+
+  # Deploy modular docker-compose stack
+  - mkdir -p /opt/anythingllm/storage
+  - cd /opt/anythingllm
+  
+  # Deploy AnythingLLM. Watchtower is started automatically ONLY if the 'default' profile applies to it.
+  - docker rm -f anythingllm watchtower 2>/dev/null || true
+  - docker compose up -d
+
+final_message: "The system has been successfully provisioned with AnythingLLM using Docker Compose."
