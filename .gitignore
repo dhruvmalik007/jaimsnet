@@ -1,51 +1,76 @@
-# Secrets & credentials — never commit these
-.env
+# Environment & secrets — never commit
+*.env
 .env.*
-*.secret
-secrets.yaml
-*-secret.yaml
-*-secrets.yaml
-# Exception: InfisicalSecret CRD manifests in secrets/ are safe to commit
-!secrets/gateway-secrets.yaml
-!secrets/observability-secrets.yaml
-kubeconfig
-kubeconfig.*
-*.kubeconfig
+!.env.example
+/secrets/**/*.env
+/secrets/**/*.json
+!/secrets/**/README.md
 
-# Infisical local config
-.infisical.json
+# Kubeconfig
+*kubeconfig*
+*kube/config*
+.kube/
 
-# Helm chart dependencies & caches
-charts/
-*.tgz
-.helm/
-
-# OpenTofu / Terraform state
+# OpenTofu / Terraform
 *.tfstate
 *.tfstate.*
 .terraform/
 .terraform.lock.hcl
 .tofu/
 *.tfplan
+*.tfvars
+!*.tfvars.example
 
-# Editor & OS
+# Certificates & keys
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+coverage/
+htmlcov/
+.coverage
+
+# Node
+node_modules/
+.next/
+.nuxt/
+
+# OS & editor
 .DS_Store
+Thumbs.db
+*.log
 .idea/
 .vscode/
-*.swp
-*.swo
-*~
-Thumbs.db
+!.vscode/settings.json
 
-# Temporary & build artifacts
+# Ansible
+*.retry
+vendor/
+
+# Compliance raw evidence
+/compliance/evidence/raw/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Helm
+charts/
+*.tgz
+.helm/
+
+# Temporary
 tmp/
 temp/
 *.tmp
-*.log
-dist/
-build/
-
-# Python virtualenvs (scripts)
-.venv/
-__pycache__/
-*.pyc
+*.swp
+*.swo
+*~
