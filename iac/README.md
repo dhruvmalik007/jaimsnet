@@ -1,0 +1,962 @@
+# iac/ — WeOwn AI Infrastructure as Code
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Product Tiers](#product-tiers)
+- [Directory Structure](#directory-structure)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Module Reference](#module-reference)
+- [Environment Configuration](#environment-configuration)
+- [State Management](#state-management)
+- [Secrets Management](#secrets-management)
+- [Deployment Guide](#deployment-guide)
+- [Testing](#testing)
+- [CI/CD — GitHub Actions](#cicd--github-actions)
+- [Networking & Security](#networking--security)
+- [Cost Matrix](#cost-matrix)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [Related Projects](#related-projects)
+
+---
+
+## Overview
+
+This directory contains the OpenTofu Infrastructure as Code (IaC)
+implementation for the WeOwn AI platform. It provisions and manages
+all cloud infrastructure required to deploy AnythingLLM-based AI
+instances across two product tiers:
+
+| Tier | Infrastructure | Target |
+|------|---------------|--------|
+| **WeOwn Lite AI** | Single DO Droplet + shared GPU | Cost-conscious customers |
+| **WeOwn Pro AI** | DOKS Cluster + dedicated GPU + managed DB | Enterprise / compliance-required |
+
+### Design Principles
+
+| Principle | Implementation |
+|-----------|---------------|
+| **FOSS First** | OpenTofu (MPL-2.0) — not Terraform (BSL) |
+| **Declarative** | HCL defines desired state — OpenTofu converges |
+| **Modular** | Reusable modules composed per environment |
+| **Reproducible** | Any environment can be recreated from code |
+| **Secure** | State encryption at rest, secrets via Infisical |
+| **One-Command** | `weown-cli deploy` |
+
+---
+
+## Architecture:
+
+jAIMS will consist of the various components related to observability, 
+
+### WeOwn Lite AI — Droplet Pipeline
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  DigitalOcean ATL1                    │
+│                                                       │
+│  ┌──────────────────────────────────────────────┐    │
+│  │          VPC: 10.10.20.0/24                   │    │
+│  │                                                │    │
+│  │  ┌────────────────────────────────────────┐   │    │
+│  │  │  Droplet: allm-<customer>              │   │    │
+│  │  │  ┌──────────────┐  ┌───────────────┐   │   │    │
+│  │  │  │  AnythingLLM  │  │    Caddy      │   │   │    │
+│  │  │  │  :3001        │  │  :80/:443     │   │   │    │
+│  │  │  │  (AI Platform)│  │  (Reverse     │   │   │    │
+│  │  │  │               │  │   Proxy + TLS)│   │   │    │
+│  │  │  └──────────────┘  └───────────────┘   │   │    │
+│  │  └────────────────────────────────────────┘   │    │
+│  │                                                │    │
+│  │  Firewall: SSH (22) + HTTP (80) + HTTPS (443) │    │
+│  └──────────────────────────────────────────────┘    │
+│                                                       │
+│  Shared Services:                                     │
+│  ├── MI300X GPU (time-slice inference)                │
+│  └── Uptime Kuma (shared monitoring)                  │
+│                                                       │
+│  DNS: <customer>.weown.tools (or custom domain) → Droplet IP│
+└─────────────────────────────────────────────────────┘
+```
+
+### WeOwn Pro AI — DOKS Pipeline
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  DigitalOcean ATL1                  │
+│                                                     │
+│  ┌──────────────────────────────────────────────┐   │
+│  │          VPC: 10.10.30.0/24                   │   │
+│  │                                               │   │
+│  │  ┌────────────────────────────────────────┐   │   │
+│  │  │  DOKS Cluster: doks-<customer>         │   │   │
+│  │  │  K8s 1.31 | Autoscale 1-3 nodes       │   │   │
+│  │  │                                         │   │   │
+│  │  │  ┌─────────────┐  ┌─────────────────┐ │   │   │
+│  │  │  │ AnythingLLM │  │    Langfuse     │ │   │   │
+│  │  │  │ (Helm)      │  │ (Observability) │ │   │   │
+│  │  │  └─────────────┘  └─────────────────┘ │   │   │
+│  │  │                                         │   │   │
+│  │  │  ┌─────────────┐  ┌─────────────────┐ │   │   │
+│  │  │  │  LiteLLM    │  │     Redis       │ │   │   │
+│  │  │  │ (AI Gateway) │  │   (Cache)       │ │   │   │
+│  │  │  └─────────────┘  └─────────────────┘ │   │   │
+│  │  │                                         │   │   │
+│  │  │  ┌─────────────────────────────────┐   │   │   │
+│  │  │  │  ingress-nginx + cert-manager   │   │   │   │
+│  │  │  │  (TLS termination)              │   │   │   │
+│  │  │  └─────────────────────────────────┘   │   │   │
+│  │  └────────────────────────────────────────┘   │   │
+│  │                                               │   │
+│  │  ┌────────────────────────────────────────┐   │   │
+│  │  │  Managed PostgreSQL: db-<customer>     │   │   │
+│  │  │  ├── anythingllm (database)            │   │   │
+│  │  │  └── langfuse (database)               │   │   │
+│  │  └────────────────────────────────────────┘   │   │
+│  │                                               │   │
+│  └──────────────────────────────────────────────┘    │
+│                                                      │
+│  ┌────────────────────┐  ┌────────────────────────┐  │
+│  │  DO Load Balancer   │  │  MI300X GPU (dedicated)│ │
+│  │  (auto via ingress) │  │  vLLM inference        │ │
+│  └────────────────────┘  └────────────────────────┘  │
+│                                                      │
+│DNS: <customer>.weown.zz → LB IP (TBD whether to provide the domain name or BYOD)             │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## Tech Stack
+
+| Category | Tool | License | Module | Phase |
+|----------|------|---------|--------|-------|
+| **IaC** | OpenTofu | MPL-2.0 | — | Phase 1 |
+| **Compute** | DO Droplet | — | `droplet/` | Phase 1 |
+| **Compute** | DO DOKS | — | `doks/` | Phase 1 |
+| **Compute** | MI300X GPU | — | `gpu/` | Phase 2 |
+| **Database** | PostgreSQL 18 | PostgreSQL | `database/` | Phase 1 |
+| **AI** | AnythingLLM | MIT | `droplet/` / Helm | Phase 1 |
+| **AI Gateway** | LiteLLM | MIT | Helm (gateway/) | Phase 1 |
+| **AI Inference** | vLLM | Apache 2.0 | `gpu/` | Phase 2 |
+| **Observability** | Langfuse | MIT | `observability/langfuse/` | Phase 1 |
+| **Observability** | Uptime Kuma | MIT | `observability/uptime-kuma/` | Phase 1 |
+| **Observability** | Grafana Alloy | Apache 2.0 | `observability/grafana-alloy/` | Phase 2 |
+| **Observability** | Mimir | AGPL-3.0 | `observability/mimir/` | Phase 2 |
+| **Observability** | Prometheus | Apache 2.0 | Helm | Phase 2 |
+| **Observability** | Grafana | AGPL-3.0 | Helm | Phase 2 |
+| **Observability** | Loki | AGPL-3.0 | Helm | Phase 2 |
+| **Internal** | n8n | ⚠️ Sustainable Use | `internal-tools/n8n/` | Phase 1 |
+| **Internal** | Vaultwarden | AGPL-3.0 | `internal-tools/vaultwarden/` | Phase 1 |
+| **Collaboration** | Matomo | GPL-3.0 | `collaboration/matomo/` | Phase 3 |
+| **Collaboration** | Nextcloud | AGPL-3.0 | `collaboration/nextcloud/` | Phase 3 |
+| **Collaboration** | Stalwart | AGPL-3.0 | `collaboration/mail/stalwart/` | Phase 3 |
+| **Collaboration** | Postal | MIT | `collaboration/mail/postal/` | Phase 3 |
+| **GitOps** | ArgoCD | Apache 2.0 | `gitops/argocd/` | Phase 3 |
+| **GitOps** | Watchtower | Apache 2.0 | `gitops/watchtower/` | Phase 2 |
+| **Security** | Trivy | Apache 2.0 | `security/trivy/` | Phase 3 |
+| **Security** | CrowdSec | MIT | `security/crowdsec/` | Phase 3 |
+| **Security** | Falco | Apache 2.0 | `security/falco/` | Phase 3 |
+| **Security** | Kyverno | Apache 2.0 | `security/kyverno/` | Phase 3 |
+| **Networking** | VPC + DNS | — | `networking/` | Phase 1 |
+| **Secrets** | Infisical | MIT | K8s Operator | Phase 1 |
+| **Proxy** | Caddy / nginx | Apache 2.0 | Templates / Helm | Phase 1 |
+| **TOTAL** | **28 tools** | **27/28 FOSS** | **14 modules** | |
+
+### FOSS Compliance
+
+| Priority | Score | Detail |
+|----------|-------|--------|
+| #1 Speed to Market | ✅ | One-command deploy |
+| **#2 FOSS** | **10/10** | All tools OSI-approved |
+| #3 Data Sovereignty | ✅ | State encryption, customer-isolated VPCs |
+| #4 Cooperative | ✅ | Linux Foundation (OpenTofu), community-governed |
+
+---
+
+## Product Tiers (TBD: currently added for the sake of approx integration):
+
+| Feature | 🟢 Lite AI | 🔵 Pro AI |
+|---------|-----------|----------|
+| **Price** | $197/year | $1,997/year |
+| **Infrastructure** | DO Droplet | DOKS Cluster (K8s) |
+| **GPU** | Shared GPU/CPU  | High quality GPU instance  (hosted on MI300X) |
+| **Persistence** | Droplet-local | Persistent volumes + backups |
+| **Database** | SQLite (embedded) | Managed PostgreSQL |
+| **Redundancy** | None | Custom failover |
+| **SLA** | Best effort | Highest tier |
+| **Models** | Open-source (8B-14B) | State-of-the-art (70B+) |
+| **Observability** | Shared Uptime Kuma | Dedicated Langfuse + Kuma |
+| **Compliance** | — | ISO 42001 + ISO 27001 |
+| **Support** | Email / Chat | AI Voice + DevOps |
+| **Deploy command** | `weown-cli deploy` | `` |
+
+---
+
+## Directory Structure
+
+```
+iac/
+├── README.md
+│
+├── modules/
+│   │
+│   ├── droplet/                    # Single Droplet (Lite pipeline)
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   └── templates/
+├── doks/                       # DOKS Cluster (Pro pipeline)
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+├── networking/                 # VPC + DNS + DO Project
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   ├── database/                   # Managed PostgreSQL v18
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   │
+│   ├── gpu/                        # MI300X / MI325X provisioning
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   │
+│   ├── internal-tools/             # 🆕 Internal services
+│   │   ├── n8n/
+│   │   │   ├── main.tf
+│   │   │   ├── variables.tf
+│   │   │   └── outputs.tf
+│   │   └── vaultwarden/
+│   │       ├── main.tf
+│   │       ├── variables.tf
+│   │       └── outputs.tf
+│   │
+├── collaboration/              # 🆕 Planned services
+|   ├── matomo/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── nextcloud/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── mail/
+│   │   ├── stalwart/
+│   │   │   ├── main.tf
+│   │   │   ├── variables.tf
+│   │   │   └── outputs.tf
+│   │   ├── postal/
+│   │   │   ├── main.tf
+│   │   │   ├── variables.tf
+│   │   │   └── outputs.tf
+│   │   │
+│   │   ├── observability/              # 🔄 EXPANDED
+│   │   │   ├── uptime-kuma/
+│   │   │   │   ├── main.tf
+│   │   │   │   ├── variables.tf
+│   │   │   │   └── outputs.tf
+│   │   │   ├── langfuse/
+│   │   │   │   ├── main.tf
+│   │   │   │   ├── variables.tf
+│   │   │   │   └── outputs.tf
+│   │   │   ├── grafana-alloy/          # 🆕 Replaces Promtail
+│   │   │   │   ├── main.tf
+│   │   │   │   ├── variables.tf
+│   │   │   │   └── outputs.tf
+│   │   │   └── mimir/                  # 🆕 Long-term metrics
+│   │   │       ├── main.tf
+│   │   │       ├── variables.tf
+│   │   │       └── outputs.tf
+│   │   │
+│   │   ├── gitops/                     # 🆕 GitOps + auto-update
+│   │   │   ├── argocd/
+│   │   │   │   ├── main.tf
+│   │   │   │   ├── variables.tf
+│   │   │   │   └── outputs.tf
+│   │   │   └── watchtower/
+│   │   │       ├── main.tf
+│   │   │       ├── variables.tf
+│   │   │       └── outputs.tf
+│   │   │
+│   │   └── security/                   # 🆕 Security stack
+│   │       ├── trivy/
+│   │       │   ├── main.tf
+│   │       │   ├── variables.tf
+│   │       │   └── outputs.tf
+│   │       ├── crowdsec/
+│   │       │   ├── main.tf
+│   │       │   ├── variables.tf
+│   │       │   └── outputs.tf
+│   │       ├── falco/
+│   │       │   ├── main.tf
+│   │       │   ├── variables.tf
+│   │       │   └── outputs.tf
+│   │       └── kyverno/
+│   │           ├── main.tf
+│   │           ├── variables.tf
+│   │           └── outputs.tf
+│
+├── environments/
+│   ├── lite/                       # WeOwn Lite
+│   └── pro/                        # WeOwn Pro (includes all @RMN additions)
+│
+└── scripts/
+    └── deploy-pro.sh
+```
+
+---
+
+## Prerequisites
+
+### Required Tools
+
+| Tool | Version | Install |
+|------|---------|---------|
+| OpenTofu | ≥ 1.6.0 | [opentofu.org/docs/intro/install](https://opentofu.org/docs/intro/install/) |
+| doctl | Latest | [docs.digitalocean.com/reference/doctl](https://docs.digitalocean.com/reference/doctl/how-to/install/) |
+| kubectl | ≥ 1.28 | [kubernetes.io/docs/tasks/tools](https://kubernetes.io/docs/tasks/tools/) |
+| Helm | ≥ 3.12 | [helm.sh/docs/intro/install](https://helm.sh/docs/intro/install/) |
+| jq | Latest | `apt install jq` / `brew install jq` |
+
+### Required Accounts & Credentials
+
+| Credential | Source | Env Variable |
+|------------|--------|-------------|
+| DO API Token | [cloud.digitalocean.com/account/api/tokens](https://cloud.digitalocean.com/account/api/tokens) | `DIGITALOCEAN_TOKEN` |
+| DO Spaces Key | DO Spaces access key | `AWS_ACCESS_KEY_ID` |
+| DO Spaces Secret | DO Spaces secret key | `AWS_SECRET_ACCESS_KEY` |
+| Infisical Client ID | Infisical dashboard | `TF_VAR_infisical_client_id` |
+| Infisical Client Secret | Infisical dashboard | `TF_VAR_infisical_client_secret` |
+| SSH Key ID | `doctl compute ssh-key list` | Passed as variable |
+
+### Verify Installation
+
+```bash
+# Verify all tools
+tofu version        # OpenTofu v1.6.0+
+doctl version       # doctl 1.x
+kubectl version     # Client v1.28+
+helm version        # v3.12+
+
+# Verify DO authentication
+doctl auth init
+doctl account get
+
+# Verify Spaces access
+aws s3 ls --endpoint-url https://atl1.digitaloceanspaces.com s3://weown-tofu-state/
+```
+
+---
+
+## Quick Start
+
+### Deploy WeOwn Lite AI (5 minutes)
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/CCCbotNet/jaimsnet.git
+cd jaimsnet/iac/weown-cli
+
+# 2. Install the CLI Management Tool
+uv pip install -e .
+# OR: pip install -e .
+
+# 3. Deploy interactively (Will prompt for DO Token if not set via doctl)
+weown-cli deploy
+
+# 4. Check status and tail logs
+weown-cli list
+weown-cli logs <deployment-name>
+```
+
+### Deploy WeOwn Pro AI (15 minutes)
+
+```bash
+# 1. Set credentials (same as above)
+
+# 2. Deploy
+./scripts/deploy-pro.sh acme acme.pro.weown.agency
+
+# 3. Get kubeconfig
+export KUBECONFIG=./environments/pro/kubeconfig-doks-acme.yaml
+
+# 4. Verify cluster
+kubectl get nodes
+kubectl get pods -A
+
+# 5. Verify endpoint
+curl -I https://acme.pro.weown.agency
+# Expected: HTTP/2 200
+```
+
+### Destroy (Decommission)
+
+```bash
+# Lite
+cd jaimsnet/iac/weown-cli
+weown-cli destroy <deployment-name>
+
+# Pro
+cd environments/pro
+tofu destroy -var="customer_slug=acme" \
+             -var="customer_domain=acme.pro.weown.agency" \
+             -var="customer_name=acme"
+```
+
+---
+
+## Module Reference
+
+### `modules/droplet`
+
+Provisions a single DO Droplet with AnythingLLM + Caddy via cloud-init.
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `instance_name` | string | — | Droplet name |
+| `domain` | string | — | Full domain (e.g., `acme.weown.tools`) |
+| `dns_zone` | string | — | DNS zone (e.g., `weown.tools`) |
+| `dns_subdomain` | string | — | Subdomain (e.g., `acme`) |
+| `region` | string | `atl1` | DO region |
+| `droplet_size` | string | `s-2vcpu-4gb` | Droplet size slug |
+| `ssh_key_ids` | list(string) | — | SSH key IDs |
+| `tier` | string | `lite` | Product tier (`lite` or `pro`) |
+| `enable_backups` | bool | `false` | Enable DO backups |
+
+| Output | Description |
+|--------|-------------|
+| `droplet_id` | Droplet resource ID |
+| `ipv4_address` | Public IPv4 |
+| `instance_url` | Full HTTPS URL |
+| `firewall_id` | Firewall resource ID |
+| `dns_record_fqdn` | DNS FQDN |
+
+### `modules/doks`
+
+Provisions a managed Kubernetes cluster with autoscaling.
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `cluster_name` | string | — | DOKS cluster name |
+| `region` | string | `atl1` | DO region |
+| `k8s_version` | string | `1.31.1-do.5` | K8s version |
+| `node_size` | string | `s-4vcpu-8gb` | Node pool size |
+| `autoscale_min` | number | `1` | Min nodes |
+| `autoscale_max` | number | `3` | Max nodes |
+
+| Output | Description |
+|--------|-------------|
+| `cluster_id` | DOKS cluster ID |
+| `cluster_endpoint` | K8s API endpoint (sensitive) |
+| `kubeconfig_raw` | Raw kubeconfig (sensitive) |
+| `cluster_urn` | DO resource URN |
+
+### `modules/networking`
+
+Provisions VPC, DNS zone, and DO Project.
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `vpc_name` | string | `weown-vpc` | VPC name |
+| `region` | string | `atl1` | DO region |
+| `vpc_ip_range` | string | `10.10.10.0/24` | VPC CIDR |
+
+| Output | Description |
+|--------|-------------|
+| `vpc_id` | VPC UUID |
+| `vpc_urn` | VPC URN |
+
+### `modules/database`
+
+Provisions managed PostgreSQL with multiple databases and firewall rules.
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `cluster_name` | string | `db-weown` | DB cluster name |
+| `pg_version` | string | `18` | PostgreSQL version |
+| `db_size` | string | `db-s-1vcpu-1gb` | Plan size |
+| `database_names` | list(string) | `["litellm","langfuse"]` | Databases to create |
+| `trusted_sources` | list(object) | `[]` | Firewall trusted sources |
+
+| Output | Description |
+|--------|-------------|
+| `cluster_id` | DB cluster ID |
+| `host` | Connection host (sensitive) |
+| `port` | Connection port |
+| `connection_uri` | Full URI (sensitive) |
+
+---
+
+## Environment Configuration
+
+### Lite — Override per Customer
+
+```bash
+tofu apply \
+  -var="customer_slug=acme" \
+  -var="customer_name=Acme Corp" \
+  -var="customer_domain=acme.weown.tools" \
+  -var="dns_subdomain=acme" \
+  -var="ssh_key_ids=[\"12345678\"]"
+```
+
+### Pro — Override per Customer
+
+```bash
+tofu apply \
+  -var="customer_slug=acme" \
+  -var="customer_name=Acme Corp" \
+  -var="customer_domain=acme.pro.weown.agency" \
+  -var="autoscale_max=5" \
+  -var="db_size=db-s-2vcpu-4gb"
+```
+
+---
+
+## State Management
+
+| Field | Value |
+|-------|-------|
+| Backend | DO Spaces (S3-compatible) |
+| Bucket | `weown-tofu-state` |
+| Region | ATL1 |
+| Encryption | ✅ AES-GCM at rest (OpenTofu-exclusive) |
+| Locking | ✅ Enabled |
+| Versioning | ✅ DO Spaces versioning |
+| Key format | `<tier>/<customer_slug>/terraform.tfstate` |
+
+### State Isolation
+
+```
+weown-tofu-state/
+├── lite/
+│   ├── acme/terraform.tfstate
+│   ├── client2/terraform.tfstate
+│   └── client3/terraform.tfstate
+└── pro/
+    ├── enterprise1/terraform.tfstate
+    └── enterprise2/terraform.tfstate
+```
+
+> **Each customer gets isolated state.** No cross-contamination.
+
+---
+
+## Secrets Management
+
+| Secret | Source | Method |
+|--------|--------|--------|
+| DO API Token | Infisical | Provider data source |
+| DO Spaces credentials | Environment variables | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` |
+| SSH keys | DO account | Referenced by ID |
+| State encryption passphrase | Infisical | `TF_VAR_state_encryption_passphrase` |
+
+> **No secrets in Git. Ever.** All credentials via Infisical or environment variables.
+
+---
+
+## Deployment Guide
+
+### Step-by-Step: Lite
+
+| # | Step | Command | Verify |
+|---|------|---------|--------|
+| 1 | Auth | `doctl auth init` | `doctl account get` |
+| 2 | Install CLI | `cd weown-cli && pip install -e .` | `weown-cli --help` works |
+| 3 | Deploy | `weown-cli deploy` | "Deployment Successful!" with IP |
+| 4 | Monitor | `weown-cli logs <name>` | Wait for "Started AnythingLLM" |
+| 5 | Verify HTTPS | `curl -I http://<droplet-ip>:3001` | HTTP 200 |
+| 6 | Configure AnythingLLM | Browser → `<droplet-ip>:3001` | Set LLM + embedder |
+
+### Step-by-Step: Pro
+
+| # | Step | Command | Verify |
+|---|------|---------|--------|
+| 1 | Set credentials | `export DIGITALOCEAN_TOKEN=...` | `doctl account get` |
+| 2 | Initialize | `cd environments/pro && tofu init` | "Successfully configured backend" |
+| 3 | Plan | `tofu plan -var="customer_slug=acme" ...` | Review: DOKS + PG + networking |
+| 4 | Apply | `tofu apply` | "Apply complete!" |
+| 5 | Get kubeconfig | `export KUBECONFIG=./kubeconfig-doks-acme.yaml` | `kubectl get nodes` |
+| 6 | Deploy Helm charts | `helm install anythingllm ...` | `kubectl get pods` |
+| 7 | Verify endpoint | `curl -I https://acme.pro.weown.agency` | HTTP/2 200 |
+
+---
+
+## Testing
+
+### Pre-Deploy Validation
+
+```bash
+# Validate HCL syntax
+tofu validate
+
+# Format check
+tofu fmt -check -recursive
+
+# Plan (dry run)
+tofu plan -var="customer_slug=test" \
+          -var="customer_domain=test.weown.tools" \
+          -var="customer_name=Test" \
+          -var="dns_subdomain=test"
+```
+
+### Smoke Test (10-Point)
+
+| # | Test | Command | Expected |
+|---|------|---------|----------|
+| 1 | `tofu init` succeeds | `tofu init` | Backend connected |
+| 2 | `tofu validate` passes | `tofu validate` | "Success!" |
+| 3 | `tofu plan` — no errors | `tofu plan` | Valid plan output |
+| 4 | State encrypted | Check DO Spaces | Encrypted blob |
+| 5 | Infisical secrets resolve | `tofu plan` (no auth errors) | Providers authenticated |
+| 6 | Create test Droplet | `tofu apply` (test env) | Droplet appears in DO |
+| 7 | DNS resolves | `dig test.weown.tools` | Returns IP |
+| 8 | HTTPS works | `curl -I https://test.weown.tools` | HTTP/2 200 |
+| 9 | AnythingLLM responds | Browser → admin panel | Login page |
+| 10 | Destroy clean | `tofu destroy` | All resources removed |
+
+### Integration Test — Full Cycle
+
+```bash
+# Install
+cd weown-cli
+pip install -e .
+
+# Deploy
+weown-cli deploy  # Follow the interactive prompts
+
+# Verify
+curl -sf https://smoketest.weown.tools && echo "✅ PASS" || echo "❌ FAIL"
+
+# Destroy
+weown-cli destroy <deployment-name>
+
+echo "✅ Full cycle complete"
+```
+
+---
+
+## CI/CD — GitHub Actions
+
+### Workflow: Plan on PR, Apply on Merge
+
+```yaml
+# Triggered by changes to iac/ directory
+# PR → tofu plan (review in PR comments)
+# Merge to main → tofu apply (auto-deploy)
+```
+
+| Event | Action | Approval |
+|-------|--------|----------|
+| Pull Request | `tofu plan` — output in PR | Team reviews |
+| Merge to main | `tofu apply` — infrastructure deployed | Auto (post-review) |
+
+### Required GitHub Secrets
+
+| Secret | Description |
+|--------|-------------|
+| `DIGITALOCEAN_TOKEN` | DO API token |
+| `DO_SPACES_KEY` | Spaces access key |
+| `DO_SPACES_SECRET` | Spaces secret key |
+| `INFISICAL_CLIENT_ID` | Infisical machine identity |
+| `INFISICAL_CLIENT_SECRET` | Infisical machine secret |
+
+---
+
+## Networking & Security
+
+### VPC Isolation
+
+| Tier | VPC CIDR | Isolation |
+|------|----------|-----------|
+| Lite | `10.10.20.0/24` | Per-customer VPC |
+| Pro | `10.10.30.0/24` | Per-customer VPC |
+
+### Firewall Rules (Lite — Droplet)
+
+| Direction | Protocol | Port | Source |
+|-----------|----------|------|--------|
+| Inbound | TCP | 22 | SSH allowed IPs |
+| Inbound | TCP | 80 | `0.0.0.0/0` |
+| Inbound | TCP | 443 | `0.0.0.0/0` |
+| Outbound | TCP/UDP | All | `0.0.0.0/0` |
+
+### Security Hardening (cloud-init)
+
+| # | Measure | Implementation |
+|---|---------|---------------|
+| 1 | SSH key auth only | cloud-init (no password) |
+| 2 | UFW firewall | Ports 22, 80, 443 only |
+| 3 | Fail2ban | Brute-force protection |
+| 4 | Auto-updates | `unattended-upgrades` |
+| 5 | Docker rootless | Container isolation |
+
+---
+
+## Internal Tools
+### n8n — Workflow Automation
+
+| Field | Value |
+|-------|-------|
+| Purpose | RAG chunking, webhook pipelines, API orchestration |
+| License | ⚠️ Sustainable Use (fair-code — NOT OSI) |
+| Module | `modules/internal-tools/n8n/` |
+| Deployment | Docker (Droplet) or Helm (DOKS) |
+| Database | PostgreSQL (shared managed instance) |
+| Domain | `n8n.weown.agency` |
+
+### Vaultwarden — Password Management
+
+| Field | Value |
+|-------|-------|
+| Purpose | Self-hosted Bitwarden-compatible password vault |
+| License | AGPL-3.0 ✅ |
+| Module | `modules/internal-tools/vaultwarden/` |
+| Deployment | Docker (Droplet) |
+| Storage | SQLite or PostgreSQL |
+| Domain | `vault.weown.tools` |
+
+---
+
+## Collaboration Services (Planned)
+
+### Matomo — Self-Hosted Analytics
+
+| Field | Value |
+|-------|-------|
+| Purpose | Privacy-respecting web analytics (GA alternative) |
+| License | GPL-3.0 ✅ |
+| Module | `modules/collaboration/matomo/` |
+| Phase | P2 (W14+) |
+
+### Nextcloud — File Storage & Collaboration
+
+| Field | Value |
+|-------|-------|
+| Purpose | Self-hosted file sync, sharing, collaboration |
+| License | AGPL-3.0 ✅ |
+| Module | `modules/collaboration/nextcloud/` |
+| Phase | P2 (W14+) |
+
+### Stalwart — Email Server
+
+| Field | Value |
+|-------|-------|
+| Purpose | Self-hosted SMTP/IMAP/JMAP email server |
+| License | AGPL-3.0 ✅ |
+| Module | `modules/collaboration/mail/stalwart/` |
+| Phase | P2 (evaluate vs Proton Business) |
+
+### Postal — Mail Delivery Platform
+
+| Field | Value |
+|-------|-------|
+| Purpose | Self-hosted transactional + bulk email delivery |
+| License | MIT ✅ |
+| Module | `modules/collaboration/mail/postal/` |
+| Phase | P2 (evaluate vs Proton Business) |
+
+---
+
+## Observability Stack (Expanded)
+
+### Grafana Alloy — Telemetry Collector
+
+| Field | Value |
+|-------|-------|
+| Purpose | Unified telemetry collector (replaces Promtail) |
+| License | Apache 2.0 ✅ |
+| Module | `modules/observability/grafana-alloy/` |
+| Replaces | Promtail (log collection only → full telemetry) |
+| Collects | Logs + metrics + traces (OTLP, Prometheus, Loki) |
+
+### Mimir — Long-Term Metrics Storage
+
+| Field | Value |
+|-------|-------|
+| Purpose | Scalable long-term Prometheus metrics storage |
+| License | AGPL-3.0 ✅ |
+| Module | `modules/observability/mimir/` |
+| Integrates | Prometheus → Mimir (remote write) → Grafana (query) |
+
+### Full Observability Stack (jAIMSnet)
+
+```
+Layer 1 (Infrastructure):
+  Prometheus → Mimir (long-term) → Grafana (dashboards)
+  Grafana Alloy (collector) → Loki (logs) → Grafana
+  
+Layer 2 (Endpoints):
+  Uptime Kuma → Status pages + alerts
+
+Layer 3 (AI/LLM):
+  Langfuse → Prompt tracing + cost tracking
+```
+
+---
+
+## GitOps & Deployment
+
+### ArgoCD — GitOps Continuous Delivery
+
+| Field | Value |
+|-------|-------|
+| Purpose | Declarative GitOps for Kubernetes |
+| License | Apache 2.0 ✅ |
+| Module | `modules/gitops/argocd/` |
+| Workflow | Git push → ArgoCD detects → syncs to cluster |
+| Phase | Phase 3 (jAIMSnet) |
+
+### Watchtower — Container Auto-Update
+
+| Field | Value |
+|-------|-------|
+| Purpose | Automatically update running Docker containers |
+| License | Apache 2.0 ✅ |
+| Module | `modules/gitops/watchtower/` |
+| Scope | Droplet-based services (Lite tier + standalone) |
+| Note | DOKS uses ArgoCD instead |
+
+### GitOps Strategy
+
+| Infrastructure | Tool | Trigger |
+|---------------|------|---------|
+| DOKS (K8s) | **ArgoCD** | Git push → auto-sync |
+| Droplets (Docker) | **Watchtower** | Registry push → auto-pull |
+| IaC (OpenTofu) | **GitHub Actions** | PR merge → tofu apply |
+
+---
+
+## Security Stack
+
+### Trivy — Vulnerability Scanning
+
+| Field | Value |
+|-------|-------|
+| Purpose | Container image + filesystem + IaC vulnerability scanning |
+| License | Apache 2.0 ✅ |
+| Module | `modules/security/trivy/` |
+| Scope | CI/CD pipeline (pre-deploy scanning) + runtime |
+
+### CrowdSec — Collaborative Threat Detection
+
+| Field | Value |
+|-------|-------|
+| Purpose | Community-driven intrusion detection + prevention |
+| License | MIT ✅ |
+| Module | `modules/security/crowdsec/` |
+| Scope | All public-facing endpoints |
+
+### Falco — Runtime Security
+
+| Field | Value |
+|-------|-------|
+| Purpose | K8s runtime threat detection (syscall monitoring) |
+| License | Apache 2.0 ✅ |
+| Module | `modules/security/falco/` |
+| Scope | DOKS clusters (Pro tier) |
+
+### Kyverno — K8s Policy Engine
+
+| Field | Value |
+|-------|-------|
+| Purpose | Kubernetes admission controller + policy enforcement |
+| License | Apache 2.0 ✅ |
+| Module | `modules/security/kyverno/` |
+| Scope | DOKS clusters (Pro tier) — enforce container policies |
+
+### Security Layers
+
+```
+Build Phase:
+  Trivy (scan images) → Block vulnerable deploys
+
+Runtime Phase:
+  CrowdSec (network threats) → Block malicious IPs
+  Falco (syscall monitoring) → Alert on anomalies
+  Kyverno (admission control) → Enforce policies
+```
+
+---
+
+---
+
+## Cost Matrix
+
+| Component | Lite (per customer) | Pro (per customer) |
+|-----------|--------------------|--------------------|
+| Compute | $12-24/mo (Droplet) | $48/mo (DOKS base) |
+| Load Balancer | — | $12/mo |
+| Database | — (SQLite) | $15/mo (Managed PG) |
+| GPU (shared/dedicated) | $2-5/mo | $50-100/mo |
+| Monitoring | $0.50/mo (shared) | $0/mo (in-cluster) |
+| State backend | $5/mo (shared bucket) | $5/mo (shared bucket) |
+| **Total COGS** | **~$15-30/mo** | **~$130-180/mo** |
+| **Revenue** | **$197/yr (~$16/mo)** | **$1,997/yr (~$166/mo)** |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| `tofu init` fails — backend | Spaces credentials missing | Set `DIGITALOCEAN_TOKEN` |
+| `tofu plan` — provider auth | DO token missing/expired | Set `DIGITALOCEAN_TOKEN` or rotate in Infisical |
+| DNS not resolving | Propagation delay | Wait 5-10 min; verify with `dig` |
+| SSL cert pending | Caddy needs DNS + port 80 | Ensure firewall allows 80/443; DNS resolves |
+| Cloud-init not completing | Script error in user_data | SSH in → `cat /var/log/cloud-init-output.log` |
+| State lock error | Concurrent apply | Wait or force-unlock: `tofu force-unlock <ID>` |
+| DOKS nodes not scaling | Autoscaler limits | Check `autoscale_min`/`autoscale_max` in tfvars |
+
+---
+
+## Contributing
+
+1. **Branch** from `main` — never commit directly
+2. **Write HCL** in the appropriate module or environment
+3. **Validate** — `tofu fmt && tofu validate`
+4. **Open PR** — GitHub Actions runs `tofu plan`
+5. **Review** — team reviews plan output in PR
+6. **Merge** — auto-applies via GitHub Actions
+7. **No secrets in Git** — use Infisical or env vars
+
+### Naming Conventions
+
+| Resource | Pattern | Example |
+|----------|---------|---------|
+| Droplet | `allm-<customer>` | `allm-acme` |
+| DOKS | `doks-<customer>` | `doks-acme` |
+| Database | `db-<customer>` | `db-acme` |
+| VPC | `weown-<tier>-vpc` | `weown-lite-vpc` |
+| Firewall | `<instance>-fw` | `allm-acme-fw` |
+| State key | `<tier>/<customer>/terraform.tfstate` | `lite/acme/terraform.tfstate` |
+
+---
+
+## Related Projects
+
+| Project | Description | URL |
+|---------|-------------|-----|
+| PRJ-015 | #HybridArchitecture — GPU instances | [GitHub](https://github.com/CCCbotNet/fedarch/blob/main/_PROJECTS_/PRJ-015_HybridArchitecture.md) |
+| PRJ-016 | LiteLLM AI Gateway | [GitHub](https://github.com/CCCbotNet/fedarch/blob/main/_PROJECTS_/PRJ-016_AIGateway-LiteLLM.md) |
+| PRJ-017 | Langfuse Observability | [GitHub](https://github.com/CCCbotNet/fedarch/blob/main/_PROJECTS_/PRJ-017_Observability.md) |
+| PRJ-032 | OpenTofu IaC for #FedArch | [GitHub](https://github.com/CCCbotNet/fedarch/blob/main/_PROJECTS_/PRJ-032_OpenTofu-IaC.md) |
+
+---
+
+## License
+
+OpenTofu configurations in this directory are part of the
+[jAIMSnet](https://github.com/CCCbotNet/jaimsnet) repository.
+
+| Component | License |
+|-----------|---------|
+| OpenTofu | MPL-2.0 |
+| This IaC code | Private (♾️ WeOwnNet 🌐) |
