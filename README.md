@@ -3,14 +3,18 @@
 > <!-- LOGO PLACEHOLDER: Add jAIMSnet logo here -->
 >
 > **Open-source AI Management Systems infrastructure — ISO/IEC 42001 aligned**
->
+> 
 > **j** + **AIMS** (AI Management Systems) + **net** — Purpose-built for enterprise AI governance.
+
+## Project Overview
+
+jAIMSnet is an AI management systems platform integrating multiple services for AI infrastructure management across ♾️ WeOwnNet 🌐 ecosystem.
 
 | Field | Value |
 |---|---|
 | **Phase** | Phase 1 🔴 |
 | **Status** | 🔄 In Progress |
-| **Last Updated** | 2025-01-01 |
+| **Last Updated** | 2026-03-07 |
 | **Cluster** | jaimsnet-cluster · DigitalOcean DOKS · ATL1 · K8s 1.34.1 |
 | **ISO Reference** | [ISO/IEC 42001:2023](https://www.iso.org/standard/81230.html) AI Management Systems |
 
@@ -18,6 +22,7 @@
 
 ## Table of Contents
 
+- [Repository Structure](#repository-structure)
 - [Architecture](#architecture)
 - [Platform Status](#platform-status)
 - [Infrastructure](#infrastructure)
@@ -31,8 +36,24 @@
 
 ---
 
-## Architecture
+## Repository Structure
 
+Monorepo (`jaimsnet/jaimsnet`) with structured directories for:
+- `docs/` (architecture, deployment guide, ADRs, runbooks)
+- `cluster/` (namespace definitions, ClusterIssuer)
+- `ingress/` (ingress-nginx, cert-manager)
+- `secrets/infisical/` (operator + sync CRDs)
+- `gateway/` (LiteLLM, Redis)
+- `observability/` (Langfuse, Prometheus, Grafana, Loki, Alloy, Mimir, Kuma)
+- `gpu/` (vLLM on MI300X)
+- `iac/` (OpenTofu, Ansible)
+- `gitops/` (ArgoCD, Watchtower)
+- `security/` (Kyverno, Trivy, Falco, CrowdSec, kube-bench, Docker Bench)
+- `compliance/` (NIST CSF, CIS Controls, ISO 27001, ISO 42001, CCM, FedRAMP)
+- `testing/` (integration, load, chaos)
+- `scripts/` (utility scripts)
+
+## Architecture
 ```
 Internet → DO Load Balancer (129.212.240.75)
   → ingress-nginx
@@ -63,35 +84,35 @@ Uptime Kuma (separate Droplet) → monitors all endpoints (kuma.jAIMS.app)
 
 ## Platform Status
 
-| Component | Tool | Phase | Status | Owner |
-|---|---|---|---|---|
-| Ingress controller | ingress-nginx | Phase 1 🔴 | 🔄 In Progress | @SHD |
-| TLS automation | cert-manager + Let's Encrypt | Phase 1 🔴 | 🔄 In Progress | @SHD |
-| AI gateway | LiteLLM | Phase 1 🔴 | 🔄 In Progress | @RMN |
-| Response caching | Redis | Phase 1 🔴 | 🔄 In Progress | @SHD |
-| LLM observability | Langfuse | Phase 1 🔴 | 🔄 In Progress | @RMN |
-| Secret management | Infisical Operator | Phase 1 🔴 | 🔄 In Progress | @SHD |
-| Endpoint monitoring | Uptime Kuma | Phase 1 🔴 | 🔄 In Progress | @SHD |
-| Infrastructure as Code | OpenTofu | Phase 1 🔴 | 🔄 In Progress | @LDC |
-| Metrics + dashboards | Prometheus + Grafana | Phase 2 🟠 | 📋 Planned | @RMN |
-| Log aggregation | Loki + Alloy | Phase 2 🟠 | 📋 Planned | @RMN |
-| Long-term metrics | Mimir | Phase 2 🟠 | 📋 Planned | @RMN |
-| GPU inference | vLLM on AMD MI300X | Phase 2 🟠 | 📋 Planned | @LDC |
-| Policy engine | Kyverno | Phase 2 🟠 | 📋 Planned | @SHD |
-| Network policies | Cilium | Phase 2 🟠 | 📋 Planned | @SHD |
-| GitOps (K8s) | ArgoCD | Phase 3 🟡 | 📋 Planned | @SHD |
-| GitOps (Docker) | Watchtower | Phase 3 🟡 | 📋 Planned | @SHD |
-| Image scanning | Trivy Operator | Phase 3 🟡 | 📋 Planned | @SHD |
-| Runtime security | Falco | Phase 3 🟡 | 📋 Planned | @SHD |
-| IDS + WAF | CrowdSec | Phase 3 🟡 | 📋 Planned | @SHD |
-| K8s benchmarking | kube-bench | Phase 3 🟡 | 📋 Planned | @SHD |
-| Docker benchmarking | docker-bench | Phase 3 🟡 | 📋 Planned | @SHD |
-| Secret scanning (CI) | Gitleaks | Phase 3 🟡 | 📋 Planned | @SHD |
-| SBOM generation | Syft + Grype | Phase 3 🟡 | 📋 Planned | @SHD |
-| Droplet automation | Ansible | Phase 3 🟡 | 📋 Planned | @SHD |
-| AI agents | TBD | Phase 4 🟢 | 📋 Planned | @LDC |
-| Load testing | k6 / Locust | Phase 4 🟢 | 📋 Planned | @LDC |
-| Chaos engineering | Litmus / Chaos Mesh | Phase 4 🟢 | 📋 Planned | @LDC |
+| Component | Tool | Phase | Status |
+|---|---|---|---|
+| Ingress controller | ingress-nginx | Phase 1 🔴 | 🔄 In Progress |
+| TLS automation | cert-manager + Let's Encrypt | Phase 1 🔴 | 🔄 In Progress |
+| AI gateway | LiteLLM | Phase 1 🔴 | 🔄 In Progress |
+| Response caching | Redis | Phase 1 🔴 | 🔄 In Progress |
+| LLM observability | Langfuse | Phase 1 🔴 | 🔄 In Progress |
+| Secret management | Infisical Operator | Phase 1 🔴 | 🔄 In Progress |
+| Endpoint monitoring | Uptime Kuma | Phase 1 🔴 | 🔄 In Progress |
+| Infrastructure as Code | OpenTofu | Phase 1 🔴 | 🔄 In Progress |
+| Metrics + dashboards | Prometheus + Grafana | Phase 2 🟠 | 📋 Planned |
+| Log aggregation | Loki + Alloy | Phase 2 🟠 | 📋 Planned |
+| Long-term metrics | Mimir | Phase 2 🟠 | 📋 Planned |
+| GPU inference | vLLM on AMD MI300X | Phase 2 🟠 | 📋 Planned |
+| Policy engine | Kyverno | Phase 2 🟠 | 📋 Planned |
+| Network policies | Cilium | Phase 2 🟠 | 📋 Planned |
+| GitOps (K8s) | ArgoCD | Phase 3 🟡 | 📋 Planned |
+| GitOps (Docker) | Watchtower | Phase 3 🟡 | 📋 Planned |
+| Image scanning | Trivy Operator | Phase 3 🟡 | 📋 Planned |
+| Runtime security | Falco | Phase 3 🟡 | 📋 Planned |
+| IDS + WAF | CrowdSec | Phase 3 🟡 | 📋 Planned |
+| K8s benchmarking | kube-bench | Phase 3 🟡 | 📋 Planned |
+| Docker benchmarking | docker-bench | Phase 3 🟡 | 📋 Planned |
+| Secret scanning (CI) | Gitleaks | Phase 3 🟡 | 📋 Planned |
+| SBOM generation | Syft + Grype | Phase 3 🟡 | 📋 Planned |
+| Droplet automation | Ansible | Phase 3 🟡 | 📋 Planned |
+| AI agents | TBD | Phase 4 🟢 | 📋 Planned |
+| Load testing | k6 / Locust | Phase 4 🟢 | 📋 Planned |
+| Chaos engineering | Litmus / Chaos Mesh | Phase 4 🟢 | 📋 Planned |
 
 ---
 
