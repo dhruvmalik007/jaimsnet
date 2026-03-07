@@ -27,7 +27,7 @@ Step-by-step deployment guide for jAIMSnet Phase 1 on DigitalOcean DOKS.
 | 2 | Deploy ingress-nginx | Helm - ingress/ingress-nginx/ | 🔄 In Progress |
 | 3 | Deploy cert-manager | Helm - ingress/cert-manager/ | 🔄 In Progress |
 | 4 | Deploy Infisical Operator | Helm - secrets/infisical/operator/ | 🔄 In Progress |
-| 5 | Apply InfisicalSecret CRDs | kubectl - secrets/infisical/sync/ | �� In Progress |
+| 5 | Apply InfisicalSecret CRDs | kubectl - secrets/infisical/sync/ | 🔄 In Progress |
 | 6 | Deploy Redis | Helm - gateway/redis/ | 🔄 In Progress |
 | 7 | Deploy LiteLLM | Helm - gateway/litellm/ | 🔄 In Progress |
 | 8 | Deploy Langfuse | Helm - observability/langfuse/ | 🔄 In Progress |

@@ -13,7 +13,7 @@ CI pipeline definitions for validating, scanning, and deploying jAIMSnet infrast
 
 | Workflow | File | Purpose | Phase | Status |
 |---|---|---|---|---|
-| Helm Lint | `helm-lint.yaml` | Validate Helm charts | Phase 3 �� | ⬜ TODO |
+| Helm Lint | `helm-lint.yaml` | Validate Helm charts | Phase 3 🟡 | ⬜ TODO |
 | Kubeconform | `kubeconform.yaml` | Validate K8s manifests | Phase 3 🟡 | ⬜ TODO |
 | OpenTofu Validate | `tofu-validate.yaml` | Validate OpenTofu modules | Phase 3 🟡 | ⬜ TODO |
 | Ansible Lint | `ansible-lint.yaml` | Validate Ansible playbooks | Phase 3 🟡 | ⬜ TODO |

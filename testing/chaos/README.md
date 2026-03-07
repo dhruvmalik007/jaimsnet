@@ -22,7 +22,7 @@ Chaos engineering validates jAIMSnet resilience by intentionally injecting failu
 |---|---|---|---|
 | Pod Failure - LiteLLM | gateway/litellm | K8s restarts pod; brief disruption less than 30s | Phase 4 🟢 |
 | Pod Failure - Langfuse | observability/langfuse | LiteLLM continues without tracing | Phase 4 🟢 |
-| Network Partition | gateway to observability | LiteLLM degrades gracefully | Phase 4 �� |
+| Network Partition | gateway to observability | LiteLLM degrades gracefully | Phase 4 🟢 |
 | Node Drain | Worker node | DOKS autoscaler adds replacement node | Phase 4 🟢 |
 | GPU Container Failure | vllm containers | LiteLLM fails over to cloud models | Phase 4 🟢 |
 | PostgreSQL Failover | Managed PG | Services reconnect within PG failover window | Phase 4 🟢 |

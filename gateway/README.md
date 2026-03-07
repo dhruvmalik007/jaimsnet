@@ -14,7 +14,7 @@ The jAIMSnet AI gateway provides a unified, OpenAI-compatible API for routing LL
 | Component | Directory | Purpose | Phase | Status |
 |---|---|---|---|---|
 | LiteLLM | [litellm/](./litellm/) | LLM proxy gateway, routing, budgets | Phase 1 🔴 | 🔄 In Progress |
-| Redis | [redis/](./redis/) | Response caching, rate limiting | Phase 1 �� | 🔄 In Progress |
+| Redis | [redis/](./redis/) | Response caching, rate limiting | Phase 1 🔴 | 🔄 In Progress |
 
 ## Endpoint
 

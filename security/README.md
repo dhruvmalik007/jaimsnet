@@ -13,7 +13,7 @@ Defense-in-depth security stack for jAIMSnet covering admission control, runtime
 
 | Tool | Directory | Purpose | Phase | Status |
 |---|---|---|---|---|
-| Kyverno | [kyverno/](./kyverno/) | K8s admission policy enforcement | Phase 2 �� | 📋 Planned |
+| Kyverno | [kyverno/](./kyverno/) | K8s admission policy enforcement | Phase 2 🟠 | 📋 Planned |
 | Trivy Operator | [trivy/](./trivy/) | In-cluster CVE + config scanning | Phase 3 🟡 | 📋 Planned |
 | Falco | [falco/](./falco/) | Runtime security monitoring | Phase 3 🟡 | 📋 Planned |
 | CrowdSec | [crowdsec/](./crowdsec/) | IDS + WAF for ingress and Droplets | Phase 3 🟡 | 📋 Planned |
