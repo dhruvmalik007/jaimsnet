@@ -49,85 +49,69 @@ instances across two product tiers:
 
 ---
 
-## Architecture:
+## Architecture
 
-jAIMS will consist of the various components related to observability, 
+The architecture is divided into the **Core Shared Infrastructure** (jAIMS Gateway) and the **Compute Deployments** (Customer Droplets or k8s clusters).
 
-### WeOwn Lite AI — Droplet Pipeline
+### Core Shared Infrastructure (jAIMS AI Gateway)
 
-```
-┌─────────────────────────────────────────────────────┐
-│                  DigitalOcean ATL1                    │
-│                                                       │
-│  ┌──────────────────────────────────────────────┐    │
-│  │          VPC: 10.10.20.0/24                   │    │
-│  │                                                │    │
-│  │  ┌────────────────────────────────────────┐   │    │
-│  │  │  Droplet: allm-<customer>              │   │    │
-│  │  │  ┌──────────────┐  ┌───────────────┐   │   │    │
-│  │  │  │  AnythingLLM  │  │    Caddy      │   │   │    │
-│  │  │  │  :3001        │  │  :80/:443     │   │   │    │
-│  │  │  │  (AI Platform)│  │  (Reverse     │   │   │    │
-│  │  │  │               │  │   Proxy + TLS)│   │   │    │
-│  │  │  └──────────────┘  └───────────────┘   │   │    │
-│  │  └────────────────────────────────────────┘   │    │
-│  │                                                │    │
-│  │  Firewall: SSH (22) + HTTP (80) + HTTPS (443) │    │
-│  └──────────────────────────────────────────────┘    │
-│                                                       │
-│  Shared Services:                                     │
-│  ├── MI300X GPU (time-slice inference)                │
-│  └── Uptime Kuma (shared monitoring)                  │
-│                                                       │
-│  DNS: <customer>.weown.tools (or custom domain) → Droplet IP│
-└─────────────────────────────────────────────────────┘
+The core infrastructure is centrally managed and provides shared AI routing, observability, and secrets management:
+
+```text
+Internet → DO Load Balancer (129.212.240.75)
+  → ingress-nginx
+    → litellm.jAIMS.app  → LiteLLM     (gateway/)
+    → langfuse.jAIMS.app → Langfuse    (observability/)
+    → cert-manager (auto-TLS via Let's Encrypt)
+
+LiteLLM → Redis            (gateway/redis)
+LiteLLM → Langfuse         (callback / traces)
+LiteLLM → OpenRouter / vLLM (providers)
+LiteLLM → PostgreSQL       (spend tracking)
+Langfuse → PostgreSQL      (traces + evals)
+
+Infisical Cloud → Infisical Operator → K8s Secrets → Pods
+
+Uptime Kuma (separate Droplet) → monitors all endpoints (kuma.jAIMS.app)
 ```
 
-### WeOwn Pro AI — DOKS Pipeline
+### Edge Deployments (Customer Instances)
 
-```
+Customer-facing AI interfaces (like AnythingLLM) are deployed via the `weown-cli` droplet pipeline on an isolated, per-instance basis. These edge instances are pre-configured to connect directly to the shared Core Infrastructure:
+
+```text
 ┌─────────────────────────────────────────────────────┐
 │                  DigitalOcean ATL1                  │
 │                                                     │
 │  ┌──────────────────────────────────────────────┐   │
-│  │          VPC: 10.10.30.0/24                   │   │
-│  │                                               │   │
-│  │  ┌────────────────────────────────────────┐   │   │
-│  │  │  DOKS Cluster: doks-<customer>         │   │   │
-│  │  │  K8s 1.31 | Autoscale 1-3 nodes       │   │   │
-│  │  │                                         │   │   │
-│  │  │  ┌─────────────┐  ┌─────────────────┐ │   │   │
-│  │  │  │ AnythingLLM │  │    Langfuse     │ │   │   │
-│  │  │  │ (Helm)      │  │ (Observability) │ │   │   │
-│  │  │  └─────────────┘  └─────────────────┘ │   │   │
-│  │  │                                         │   │   │
-│  │  │  ┌─────────────┐  ┌─────────────────┐ │   │   │
-│  │  │  │  LiteLLM    │  │     Redis       │ │   │   │
-│  │  │  │ (AI Gateway) │  │   (Cache)       │ │   │   │
-│  │  │  └─────────────┘  └─────────────────┘ │   │   │
-│  │  │                                         │   │   │
-│  │  │  ┌─────────────────────────────────┐   │   │   │
-│  │  │  │  ingress-nginx + cert-manager   │   │   │   │
-│  │  │  │  (TLS termination)              │   │   │   │
-│  │  │  └─────────────────────────────────┘   │   │   │
-│  │  └────────────────────────────────────────┘   │   │
-│  │                                               │   │
-│  │  ┌────────────────────────────────────────┐   │   │
-│  │  │  Managed PostgreSQL: db-<customer>     │   │   │
-│  │  │  ├── anythingllm (database)            │   │   │
-│  │  │  └── langfuse (database)               │   │   │
-│  │  └────────────────────────────────────────┘   │   │
-│  │                                               │   │
-│  └──────────────────────────────────────────────┘    │
-│                                                      │
-│  ┌────────────────────┐  ┌────────────────────────┐  │
-│  │  DO Load Balancer   │  │  MI300X GPU (dedicated)│ │
-│  │  (auto via ingress) │  │  vLLM inference        │ │
-│  └────────────────────┘  └────────────────────────┘  │
-│                                                      │
-│DNS: <customer>.weown.zz → LB IP (TBD whether to provide the domain name or BYOD)             │
+│  │          Shared VPC: 10.10.20.0/24           │   │
+│  │                                              │   │
+│  │  ┌────────────────────────────────────────┐  │   │
+│  │  │  Droplet: anythingllm-<ccc-id-name>    │  │   │
+│  │  │  ┌──────────────┐  ┌───────────────┐   │  │   │
+│  │  │  │  AnythingLLM │  │    Caddy      │   │  │   │
+│  │  │  │  :3001       │  │  :80/:443     │   │  │   │
+│  │  │  │              │  │  (HTTPS Proxy)│   │  │   │
+│  │  │  └──────┬───────┘  └───────────────┘   │  │   │
+│  │  └─────────┼──────────────────────────────┘  │   │
+│  │            │                                 │   │
+│  └────────────┼─────────────────────────────────┘   │
+│               │ API Calls                           │
+│               ▼                                     │
+│     ┌────────────────────────────────────┐          │
+│     │        jAIMS Core Gateway          │          │
+│     │   (litellm.jAIMS.app + langfuse)   │          │
+│     └────────────────────────────────────┘          │
 └─────────────────────────────────────────────────────┘
 ```
+
+### Future Phases
+
+- **[Phase 2]** vLLM on MI300X GPU Droplet (VPC) → LiteLLM backend
+- **[Phase 2]** Prometheus + Grafana + Loki + Alloy + Mimir
+- **[Phase 2]** Kyverno + Cilium Network Policies
+- **[Phase 3]** ArgoCD, Watchtower, Kyverno, Trivy, CrowdSec, Falco, kube-bench, docker-bench, Gitleaks, Syft, Grype, Ansible, full CI pipelines
+- **[Phase 4]** AI automation agents, customer-facing platform, k6 load testing, Litmus chaos engineering
 
 ---
 
