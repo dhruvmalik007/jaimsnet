@@ -1,0 +1,31 @@
+# jAIMSnet Code Ownership
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global default
+* @RMN @SHD
+
+# Platform & Gateway
+/gateway/ @RMN @LDC
+/observability/ @RMN @LDC
+/gpu/ @LDC
+
+# DevOps & Infrastructure
+/cluster/ @SHD
+/ingress/ @SHD
+/secrets/ @SHD @RMN
+/iac/ @LDC @SHD
+/gitops/ @SHD @LDC
+
+# Security
+/security/ @SHD @RMN
+/compliance/ @RMN @GTM
+
+# CI/CD
+/.github/ @SHD @RMN
+
+# Testing
+/testing/ @LDC @SHD
+
+# Documentation
+/docs/ @RMN @GTM
+README.md @RMN @GTM
