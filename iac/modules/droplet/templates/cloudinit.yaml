@@ -31,6 +31,17 @@ write_files:
         reverse_proxy 127.0.0.1:3001
       }
 
+  # AnythingLLM Environment Configuration (Centralized Gateway)
+  - path: /opt/anythingllm/storage/.env
+    owner: root:root
+    permissions: '0600'
+    content: |
+      LLM_PROVIDER=generic-openai
+      GENERIC_OPENAI_BASE_PATH=${litellm_base_url}/v1
+      GENERIC_OPENAI_API_KEY=${litellm_api_key}
+      # Set a default model if desired, but LiteLLM can handle default routing
+      GENERIC_OPENAI_MODEL_PREF=gpt-4o-mini
+
   # Modular Docker Compose file for AnythingLLM and Watchtower
   - path: /opt/anythingllm/docker-compose.yml
     owner: root:root

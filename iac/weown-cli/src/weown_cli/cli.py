@@ -167,6 +167,25 @@ def deploy():
     else:
         console.print("[dim]No DigitalOcean-managed domains found. Will deploy to raw IP.[/dim]")
     
+    # Prompt for Gateway Config
+    console.print("\n[bold]jAIMS Gateway Configuration[/bold]")
+    litellm_base_url = questionary.text(
+        "LiteLLM Gateway Base URL:",
+        default="https://litellm.jAIMS.app"
+    ).ask()
+    
+    if litellm_base_url is None:
+        console.print("\n[red]Cancelled by user[/red]")
+        raise typer.Exit()
+        
+    litellm_api_key = questionary.password(
+        "LiteLLM Gateway API Key for this instance:"
+    ).ask()
+    
+    if litellm_api_key is None:
+        console.print("\n[red]Cancelled by user[/red]")
+        raise typer.Exit()
+    
     confirm = questionary.confirm("Are you ready to deploy? Charges will apply to your DO account.").ask()
     if confirm is None or not confirm:
         console.print("\n[yellow]Deployment cancelled.[/yellow]")
@@ -181,7 +200,9 @@ def deploy():
         "ssh_key_name": ssh_key_name,
         "droplet_size": droplet_size,
         "customer_id": deployment_name,
-        "domain_name": domain_choice
+        "domain_name": domain_choice,
+        "litellm_base_url": litellm_base_url,
+        "litellm_api_key": litellm_api_key
     })
     
     # Deploy

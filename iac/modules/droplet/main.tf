@@ -27,6 +27,8 @@ resource "digitalocean_droplet" "anythingllm" {
     hostname          = "${var.droplet_name}-anythingllm"
     enable_watchtower = var.enable_watchtower
     fqdn              = var.domain_name != "" ? "${var.droplet_name}.${var.domain_name}" : ""
+    litellm_base_url  = var.litellm_base_url
+    litellm_api_key   = var.litellm_api_key
   })
 
   lifecycle {

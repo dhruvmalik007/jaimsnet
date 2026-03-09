@@ -50,3 +50,15 @@ variable "domain_name" {
   type        = string
   default     = ""
 }
+
+variable "litellm_base_url" {
+  description = "The centralized LiteLLM Gateway URL"
+  type        = string
+  default     = "https://litellm.jAIMS.app"
+}
+
+variable "litellm_api_key" {
+  description = "The API key for the centralized LiteLLM Gateway"
+  type        = string
+  sensitive   = true
+}

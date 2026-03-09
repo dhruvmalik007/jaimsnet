@@ -23,4 +23,6 @@ module "lite_droplet" {
   allowed_ssh_cidrs = var.allowed_ssh_cidrs
   allowed_api_cidrs = var.allowed_api_cidrs
   domain_name       = var.domain_name
+  litellm_base_url  = var.litellm_base_url
+  litellm_api_key   = var.litellm_api_key
 }

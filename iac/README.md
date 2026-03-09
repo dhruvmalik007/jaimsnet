@@ -334,7 +334,7 @@ doctl auth init
 doctl account get
 
 # Verify Spaces access
-aws s3 ls --endpoint-url https://atl1.digitaloceanspaces.com s3://weown-tofu-state/
+doctl s3 ls --endpoint-url https://atl1.digitaloceanspaces.com s3://weown-tofu-state/
 ```
 
 ---

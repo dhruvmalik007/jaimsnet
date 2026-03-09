@@ -1,6 +1,6 @@
 output "id" {
   description = "The ID of the droplet"
-  value       = module.lite_droplet.id
+  value       = module.lite_droplet.droplet_id
 }
 
 output "ipv4_address" {
