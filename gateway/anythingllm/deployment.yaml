@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anythingllm
+  namespace: anythingllm
+  labels:
+    app.kubernetes.io/name: anythingllm
+    app.kubernetes.io/component: ui
+    app.kubernetes.io/part-of: jaimsnet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: anythingllm
+  template:
+    metadata:
+      labels:
+        app: anythingllm
+        app.kubernetes.io/name: anythingllm
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: anythingllm
+          image: mintplexlabs/anythingllm:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3001
+              name: http
+              protocol: TCP
+
+          # -----------------------------------------------------------------------
+          # Storage
+          # -----------------------------------------------------------------------
+          env:
+            - name: STORAGE_DIR
+              value: /app/server/storage
+
+          # -----------------------------------------------------------------------
+          # LLM Provider — points to the jAIMS shared LiteLLM Gateway
+          # LiteLLM exposes an OpenAI-compatible /v1 endpoint.
+          # -----------------------------------------------------------------------
+            - name: LLM_PROVIDER
+              value: "custom"
+            - name: CUSTOM_PROVIDER_BASE_URL
+              value: "https://litellm.jAIMS.app/v1"
+            - name: CUSTOM_LLM_MODEL_PREF
+              value: "gpt-4o-mini"           # Default model alias from LiteLLM config
+            - name: OPENAI_API_KEY
+              # The LiteLLM master key — passed as the bearer token for its OpenAI-compat API.
+              # Synced from Infisical as LITELLM_API_KEY.
+              valueFrom:
+                secretKeyRef:
+                  name: anythingllm-secrets
+                  key: LITELLM_API_KEY
+
+          # -----------------------------------------------------------------------
+          # PostgreSQL — external managed database (replaces embedded SQLite)
+          # DB_PATH = "postgresql://user:password@host:5432/anythingllm"
+          # -----------------------------------------------------------------------
+            - name: DB_TYPE
+              value: "postgres"
+            - name: DB_PATH
+              valueFrom:
+                secretKeyRef:
+                  name: anythingllm-secrets
+                  key: DB_PATH
+
+          # -----------------------------------------------------------------------
+          # Redis — response cache + session storage of the anythingllm
+          # Points to the Redis StatefulSet in the gateway namespace.
+          # redis://redis.gateway.svc.cluster.local:6379
+          # -----------------------------------------------------------------------
+            - name: REDIS_URL
+              value: "redis://redis.gateway.svc.cluster.local:6379"
+            - name: REDIS_CACHE_ENABLED
+              value: "true"
+
+          # -----------------------------------------------------------------------
+          # Langfuse — LLM tracing + eval (self-hosted at langfuse.jAIMS.app and connected with the other entities).
+          # -----------------------------------------------------------------------
+            - name: LLM_TRACING_V2_TYPE
+              value: "langfuse"
+            - name: LANGFUSE_HOST
+              value: "https://langfuse.jAIMS.app"
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anythingllm-secrets
+                  key: LANGFUSE_PUBLIC_KEY
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anythingllm-secrets
+                  key: LANGFUSE_SECRET_KEY
+
+          # -----------------------------------------------------------------------
+          # Auth & Security
+          # -----------------------------------------------------------------------
+            - name: AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: anythingllm-secrets
+                  key: AUTH_TOKEN
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: anythingllm-secrets
+                  key: JWT_SECRET
+
+          volumeMounts:
+            - name: storage
+              mountPath: /app/server/storage
+
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+
+          livenessProbe:
+            httpGet:
+              path: /api/ping
+              port: 3001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /api/ping
+              port: 3001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: anythingllm-storage
