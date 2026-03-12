@@ -13,6 +13,7 @@ from rich.panel import Panel
 
 from weown_cli.auth import get_token, verify_auth, get_infisical_client, save_local_token, delete_local_token
 from weown_cli.state import StateIsolationEngine
+from weown_cli.gateway import gateway_app
 
 class EpilogTyper(typer.Typer):
     def __init__(self, *args, epilog: Optional[str] = None, **kwargs):
@@ -33,11 +34,15 @@ app = EpilogTyper(
     ),
     epilog=(
         "Examples:\n"
-        "  weown-cli login          Authenticate securely without doctl\n"
-        "  weown-cli deploy         Launch an interactive deployment wizard\n"
-        "  weown-cli list           Show all active & inactive nodes\n"
-        "  weown-cli logs acme-01   Tail the startup logs for a node\n"
-        "  weown-cli destroy node   Permanently decommission a node\n"
+        "  weown-cli login                     Authenticate securely without doctl\n"
+        "  weown-cli deploy                    Launch an interactive Lite deployment wizard\n"
+        "  weown-cli gateway infra             Provision DOKS + PG core infrastructure\n"
+        "  weown-cli gateway deploy            Deploy LiteLLM + Redis + Langfuse on K8s\n"
+        "  weown-cli gateway status            Show pod health of all gateway workloads\n"
+        "  weown-cli gateway destroy           Tear down the gateway stack\n"
+        "  weown-cli list                      Show all active & inactive Lite nodes\n"
+        "  weown-cli logs acme-01              Tail the startup logs for a node\n"
+        "  weown-cli destroy node              Permanently decommission a Lite node\n"
     )
 )
 console = Console()
@@ -48,6 +53,8 @@ app.add_typer(advanced_app, name="advanced")
 
 state_app = typer.Typer(help="Advanced OpenTofu state management operations.")
 app.add_typer(state_app, name="state")
+
+app.add_typer(gateway_app, name="gateway")
 
 # The canonical source for our IaC templates
 IAC_SOURCE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "opentofu" / "environments" / "lite"

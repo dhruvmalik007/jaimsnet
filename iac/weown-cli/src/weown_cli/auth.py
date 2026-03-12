@@ -48,10 +48,13 @@ def get_token() -> str:
         try:
             with open(config_path, "r") as f:
                 for line in f:
-                    if "ldc-account-weown:" in line:
-                        parts = line.strip().split("ldc-account-weown:")
-                        if len(parts) > 1 and parts[1].strip():
-                            return parts[1].strip()
+                    # Check for generic access-token or context-specific tokens
+                    if "access-token:" in line:
+                        parts = line.strip().split(":")
+                        if len(parts) > 1:
+                            token = parts[1].strip()
+                            if token:
+                                return token
         except Exception:
             pass
             
