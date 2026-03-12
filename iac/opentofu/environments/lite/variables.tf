@@ -1,8 +1,3 @@
-variable "do_token" {
-  description = "DigitalOcean API token. Provide via TF_VAR_do_token or DIGITALOCEAN_TOKEN"
-  type        = string
-  sensitive   = true
-}
 
 variable "ssh_key_name" {
   description = "Name of the SSH key on your DigitalOcean account to inject into the droplet"

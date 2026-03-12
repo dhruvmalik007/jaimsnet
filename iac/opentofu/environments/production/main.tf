@@ -169,3 +169,91 @@ module "dns" {
     module.load_balancer
   ]
 }
+
+# ------------------------------------------------------------------------------
+# 8. Uptime Kuma Monitoring Droplet
+# ------------------------------------------------------------------------------
+data "digitalocean_ssh_key" "prod_key" {
+  name = var.ssh_key_name
+}
+
+module "uptime_kuma" {
+  source = "../../modules/droplet"
+
+  name        = "weown-ai-uptime-kuma"
+  region      = var.region
+  size        = "s-1vcpu-1gb" # Minimal droplet for Uptime Kuma
+  vpc_uuid    = module.vpc.vpc_id
+  tags        = ["weown-ai", "production", "monitoring", "uptime-kuma"]
+  ssh_key_ids = [data.digitalocean_ssh_key.prod_key.id]
+
+  user_data = templatefile("${path.module}/templates/cloudinit-uptime-kuma.yaml", {
+    hostname = "uptime-kuma.jaims.app"
+  })
+}
+
+resource "digitalocean_firewall" "weown_ai_monitoring" {
+  name = "weown-ai-uptime-kuma-fw"
+
+  droplet_ids = [module.uptime_kuma.droplet_id]
+
+  # Allow SSH from authorized IP ranges
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "22"
+    source_addresses = var.allowed_ssh_cidrs
+  }
+
+  # Uptime Kuma Web Dashboard
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "3001"
+    source_addresses = ["0.0.0.0/0", "::/0"] # Can be restricted to specific IPs if needed
+  }
+
+  # Allow HTTP outbound (package updates, HTTP endpoints)
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "80"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # Allow HTTPS outbound (package updates, HTTPS endpoints, webhooks)
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "443"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # Allow DNS resolution
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "53"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  outbound_rule {
+    protocol              = "udp"
+    port_range            = "53"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # Allow outbound ICMP (pings to the outside world)
+  outbound_rule {
+    protocol              = "icmp"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # Allow unrestricted outbound to the internal VPC to monitor all services natively
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "1-65535"
+    destination_addresses = [module.vpc.ip_range]
+  }
+
+  outbound_rule {
+    protocol              = "udp"
+    port_range            = "1-65535"
+    destination_addresses = [module.vpc.ip_range]
+  }
+}

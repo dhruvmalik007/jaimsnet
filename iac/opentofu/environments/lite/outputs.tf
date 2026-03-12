@@ -10,10 +10,10 @@ output "ipv4_address" {
 
 output "ssh_command" {
   description = "The command used to SSH into the instance"
-  value       = module.lite_droplet.ssh_command
+  value       = "ssh ubuntu@${module.lite_droplet.ipv4_address}"
 }
 
 output "anythingllm_url" {
   description = "The URL to access AnythingLLM"
-  value       = module.lite_droplet.anythingllm_url
+  value       = var.domain_name != "" ? "https://${var.customer_id}.${var.domain_name}" : "http://${module.lite_droplet.ipv4_address}:3001"
 }
