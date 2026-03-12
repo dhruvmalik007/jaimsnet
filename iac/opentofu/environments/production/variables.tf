@@ -1,7 +1,8 @@
-variable "do_token" {
+
+
+variable "ssh_key_name" {
+  description = "Name of the existing SSH key in DigitalOcean"
   type        = string
-  description = "DigitalOcean Personal Access Token"
-  sensitive   = true
 }
 
 variable "region" {
@@ -56,4 +57,10 @@ variable "kuma_ip" {
   type        = string
   description = "The IP address of the Uptime Kuma instance. If set, an A record will be created for kuma."
   default     = ""
+}
+
+variable "allowed_ssh_cidrs" {
+  type        = list(string)
+  description = "List of allowed IPv4/IPv6 CIDR blocks for SSH access to the architecture (e.g. Uptime Kuma)."
+  default     = ["0.0.0.0/0", "::/0"]
 }

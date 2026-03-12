@@ -105,7 +105,7 @@ def exec(ctx: typer.Context):
     token = get_valid_token()
     env = os.environ.copy()
     env["DIGITALOCEAN_TOKEN"] = token
-    env["TF_VAR_do_token"] = token
+    env["DIGITALOCEAN_TOKEN"] = token
     
     cmd = ctx.args
     if not cmd:
@@ -286,7 +286,7 @@ def deploy():
     })
     
     # Deploy
-    env_vars = {"TF_VAR_do_token": token}
+    env_vars = {"DIGITALOCEAN_TOKEN": token}
     
     try:
         if not (isolated_dir / ".terraform").exists():
@@ -372,7 +372,7 @@ def destroy(deployment_name: str = typer.Argument(..., help="Name of the deploym
         console.print("\n[yellow]Destruction cancelled.[/yellow]")
         raise typer.Exit()
         
-    env_vars = {"TF_VAR_do_token": token}
+    env_vars = {"DIGITALOCEAN_TOKEN": token}
     try:
         engine.run_tofu("destroy", isolated_dir, env_vars)
         console.print(Panel(f"[bold green]✅ Infrastructure Destroyed![/bold green]"))

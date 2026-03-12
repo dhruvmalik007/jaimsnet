@@ -28,15 +28,20 @@ class StateIsolationEngine:
         tf_files = list(source_dir.glob("*.tf"))
         
         # We need absolute path to the standardized opentofu modules directory for rewriting
-        modules_dir_absolute = (source_dir.parent.parent / "opentofu" / "modules").resolve()
+        modules_dir_absolute = (source_dir.parent.parent / "modules").resolve()
         
         for tf_file in tf_files:
             content = tf_file.read_text()
             # Replace relative paths to modules with absolute paths
-            content = content.replace("../../opentofu/modules", str(modules_dir_absolute))
+            content = content.replace("../../modules", str(modules_dir_absolute))
             
             dest_file = dest_dir / tf_file.name
             dest_file.write_text(content)
+            
+        import shutil
+        templates_dir = source_dir / "templates"
+        if templates_dir.exists() and templates_dir.is_dir():
+            shutil.copytree(templates_dir, dest_dir / "templates", dirs_exist_ok=True)
             
     def write_tfvars(self, isolated_dir: Path, vars_data: Dict[str, Any]):
         tfvars_path = isolated_dir / "terraform.tfvars"

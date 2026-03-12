@@ -1,0 +1,49 @@
+#cloud-config
+hostname: ${hostname}
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: sudo
+    shell: /bin/bash
+
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - wget
+  - apt-transport-https
+  - ca-certificates
+  - software-properties-common
+
+runcmd:
+  - curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  - apt-get install -y nodejs
+  - mkdir -p /opt/uptime-kuma
+  - wget https://github.com/louislam/uptime-kuma/archive/refs/heads/master.zip
+  - unzip master.zip
+  - mv uptime-kuma-master/* /opt/uptime-kuma/
+  - cd /opt/uptime-kuma
+  - npm install
+  - systemctl enable uptime-kuma
+
+write_files:
+  - path: /etc/systemd/system/uptime-kuma.service
+    content: |
+      [Unit]
+      Description=Uptime Kuma
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/bin/node /opt/uptime-kuma/server/server.js --port=3001
+      Restart=always
+      User=ubuntu
+
+      [Install]
+      WantedBy=multi-user.target
+    permissions: '0644'
+
+systemctl:
+  enable:
+    - uptime-kuma
+  start:
+    - uptime-kuma

@@ -18,7 +18,7 @@ terraform {
 }
 
 provider "digitalocean" {
-  token = var.do_token
+
 }
 
 # The DOKS cluster is dynamic, so we configure the K8s and Helm providers to use its attributes.
