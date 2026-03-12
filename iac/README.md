@@ -548,28 +548,375 @@ weown-tofu-state/
 
 ## Deployment Guide
 
-### Step-by-Step: Lite
+> This section covers the full, step-by-step procedures to deploy and tear down all jAIMSnet infrastructure components using `weown-cli` and OpenTofu. Follow the dependency order carefully — infrastructure must be provisioned before application stacks.
 
-| # | Step | Command | Verify |
-|---|------|---------|--------|
-| 1 | Auth | `doctl auth init` | `doctl account get` |
-| 2 | Install CLI | `cd weown-cli && pip install -e .` | `weown-cli --help` works |
-| 3 | Deploy | `weown-cli deploy` | "Deployment Successful!" with IP |
-| 4 | Monitor | `weown-cli logs <name>` | Wait for "Started AnythingLLM" |
-| 5 | Verify HTTPS | `curl -I http://<droplet-ip>:3001` | HTTP 200 |
-| 6 | Configure AnythingLLM | Browser → `<droplet-ip>:3001` | Set LLM + embedder |
+---
 
-### Step-by-Step: Pro
+### Phase 0 — Prerequisites & Authentication
 
-| # | Step | Command | Verify |
-|---|------|---------|--------|
-| 1 | Set credentials | `export DIGITALOCEAN_TOKEN=...` | `doctl account get` |
-| 2 | Initialize | `cd environments/pro && tofu init` | "Successfully configured backend" |
-| 3 | Plan | `tofu plan -var="customer_slug=acme" ...` | Review: DOKS + PG + networking |
-| 4 | Apply | `tofu apply` | "Apply complete!" |
-| 5 | Get kubeconfig | `export KUBECONFIG=./kubeconfig-doks-acme.yaml` | `kubectl get nodes` |
-| 6 | Deploy Helm charts | `helm install anythingllm ...` | `kubectl get pods` |
-| 7 | Verify endpoint | `curl -I https://acme.pro.weown.agency` | HTTP/2 200 |
+#### 1. Install required tools
+
+```bash
+# OpenTofu (IaC)
+brew install opentofu          # macOS
+# or: https://opentofu.org/docs/intro/install/
+
+# DigitalOcean CLI
+brew install doctl             # macOS
+# or: https://docs.digitalocean.com/reference/doctl/how-to/install/
+
+# Kubernetes CLI
+brew install kubectl
+
+# Helm (K8s package manager)
+brew install helm
+
+# weown-cli (this repo's management tool)
+cd iac/weown-cli
+uv pip install -e .
+# or: pip install -e .
+```
+
+#### 2. Authenticate DigitalOcean
+
+```bash
+# One-time auth (saves token to ~/.config/doctl/config.yaml)
+doctl auth init
+
+# Verify authentication
+doctl account get
+# Expected: your DO account email + status
+
+# Verify the context name (used by weown-cli internally)
+doctl auth list
+# Note the context name in use (e.g. ldc-account-weown)
+```
+
+#### 3. Set up Infisical Machine Identity (Secrets Management)
+
+Create a Machine Identity in [Infisical Cloud → Settings → Machine Identities](https://app.infisical.com):
+1. Create a new Machine Identity with **Universal Auth**
+2. Assign it to the `jaimsnet` project with **Reader** access
+3. Generate a **Client Secret**
+
+Store the credentials securely (they will be injected into the cluster as a K8s secret):
+
+```bash
+# These are NOT committed to Git.
+# Store them in your local .env or Infisical itself for bootstrapping.
+export INFISICAL_CLIENT_ID="<your-machine-identity-client-id>"
+export INFISICAL_CLIENT_SECRET="<your-machine-identity-client-secret>"
+```
+
+> ⚠️ The `projectSlug` used in `InfisicalSecret` manifests is `jaimsnet` (configured in `iac/k8s/infisical-config.yaml`). Make sure your Machine Identity has access to paths `/gateway/*` and `/observability/*`.
+
+---
+
+### Phase 1 — Core Infrastructure (DOKS, VPC, PostgreSQL, Load Balancer)
+
+This provisions the DigitalOcean Kubernetes cluster and shared infrastructure components via OpenTofu.
+
+#### 1. Initialize OpenTofu backend
+
+```bash
+cd iac/opentofu/environments/production
+
+# Initialize backend (connects to DO Spaces state bucket)
+export DIGITALOCEAN_TOKEN="$(doctl auth init --access-token '' 2>&1 || doctl account get --format Token --no-header 2>/dev/null)"
+# or set directly:
+export DIGITALOCEAN_TOKEN="dop_v1_..."
+
+tofu init
+# Expected: "Terraform has been successfully initialized!"
+```
+
+#### 2. Plan (dry-run — review before applying)
+
+```bash
+tofu plan
+# Review the plan output carefully:
+# + digitalocean_kubernetes_cluster.jaimsnet_core_doks
+# + digitalocean_database_cluster.jaimsnet_pg
+# + digitalocean_vpc.jaimsnet_vpc
+# + digitalocean_loadbalancer.jaimsnet_lb
+```
+
+#### 3. Apply (provision infrastructure)
+
+```bash
+tofu apply -auto-approve
+# Duration: ~10-15 minutes
+# Expected final output:
+# Apply complete! Resources: N added, 0 changed, 0 destroyed.
+```
+
+#### 4. Verify DOKS cluster is reachable
+
+```bash
+# weown-cli fetches and saves kubeconfig automatically
+weown-cli gateway status --cluster jaimsnet-core-doks
+
+# Or manually via doctl
+doctl kubernetes cluster kubeconfig save jaimsnet-core-doks
+kubectl get nodes
+# Expected: node(s) in Ready state
+```
+
+---
+
+### Phase 2 — Cluster Baseline (Ingress + TLS + Infisical Operator)
+
+Install shared cluster services that all application workloads depend on.
+
+#### 1. Install Ingress NGINX Controller
+
+```bash
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx \
+  --create-namespace \
+  --wait
+# Wait: ~2-3 minutes until LoadBalancer IP is assigned
+
+# Verify
+kubectl get svc -n ingress-nginx ingress-nginx-controller
+# Note the EXTERNAL-IP — this is your cluster's public IP
+```
+
+#### 2. Install cert-manager (TLS automation)
+
+```bash
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+
+helm install cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --create-namespace \
+  --set crds.enabled=true \
+  --wait
+
+# Verify
+kubectl get pods -n cert-manager
+```
+
+#### 3. Apply ClusterIssuer (Let's Encrypt)
+
+```bash
+# Edit ingress/clusterissuer.yaml — set your email address
+kubectl apply -f ingress/clusterissuer.yaml
+
+# Verify
+kubectl get clusterissuer letsencrypt-prod
+# Expected: READY = True
+```
+
+#### 4. Install Infisical Secrets Operator
+
+```bash
+helm repo add infisical-helm-charts 'https://dl.cloudsmith.io/public/infisical/helm-charts/helm/charts/'
+helm repo update
+
+helm install infisical-operator infisical-helm-charts/secrets-operator \
+  --namespace infisical \
+  --create-namespace \
+  --wait
+
+# Verify CRDs are installed
+kubectl get crd | grep infisical
+# Expected: infisicalsecrets.secrets.infisical.com  listed
+
+# Verify operator pod is running
+kubectl get pods -n infisical
+```
+
+#### 5. Inject Infisical Machine Identity credentials into the cluster
+
+```bash
+# This K8s secret is referenced by all InfisicalSecret manifests
+kubectl create secret generic universal-auth-credentials \
+  --namespace infisical \
+  --from-literal=clientId="$INFISICAL_CLIENT_ID" \
+  --from-literal=clientSecret="$INFISICAL_CLIENT_SECRET"
+
+# Verify (should show clientId and clientSecret keys)
+kubectl get secret universal-auth-credentials -n infisical -o jsonpath='{.data}' | \
+  python3 -c "import sys,json,base64; d=json.load(sys.stdin); print({k: base64.b64decode(v).decode()[:8]+'...' for k,v in d.items()})"
+```
+
+#### 6. Apply shared Infisical ConfigMap
+
+```bash
+# Stores project slug and env — referenced in documentation
+kubectl apply -f iac/k8s/infisical-config.yaml
+```
+
+---
+
+### Phase 3 — Gateway Stack (Redis → Langfuse → LiteLLM → AnythingLLM)
+
+Deploy the AI Gateway application stack using `weown-cli`. The CLI applies manifests in dependency order.
+
+```bash
+# Full stack rollout (all phases)
+export DIGITALOCEAN_TOKEN="dop_v1_..."
+
+weown-cli gateway deploy --cluster jaimsnet-core-doks --yes
+```
+
+The deployment proceeds in phases:
+1. **Namespaces** — `gateway`, `anythingllm`, `observability`
+2. **Infisical Secret Syncs** — syncs secrets from Infisical Cloud into each namespace's K8s `Secret`
+3. **Redis Cache** — StatefulSet with PVC, waits for Infisical `redis-secrets` to exist
+4. **Langfuse Observability** — Deployment + Ingress (`langfuse.jaims.app`)
+5. **LiteLLM Gateway** — Deployment + Ingress + ConfigMap (`litellm.jaims.app`)
+6. **AnythingLLM UI** — Deployment + PVC + Ingress (`anythingllm.jaims.app`)
+
+> ⚠️ **Prerequisite**: Phases 1 and 2 must be complete. The Infisical Machine Identity must have access to:
+> - `/gateway/redis`, `/gateway/litellm`, `/gateway/anythingllm`
+> - `/observability/langfuse`
+
+---
+
+### Phase 4 — Verification
+
+After deployment completes, verify all components:
+
+```bash
+# Check all gateway pods
+kubectl get pods -n gateway
+kubectl get pods -n observability
+kubectl get pods -n anythingllm
+# All pods should be in Running state (not CrashLoopBackOff / CreateContainerConfigError)
+
+# Check Infisical secret sync status
+kubectl get infisicalsecrets -A
+# SYNCED column should be True for all
+
+# Check ingress endpoints
+kubectl get ingress -A
+# Should show hosts: litellm.jaims.app, langfuse.jaims.app, anythingllm.jaims.app
+
+# Check TLS certificate issuance
+kubectl get certificate -A
+# READY = True means Let's Encrypt cert issued
+
+# Smoke test HTTP endpoints
+curl -I https://langfuse.jaims.app      # 200 OK
+curl -I https://litellm.jaims.app/health  # {"status": "ok"}
+
+# Full status via weown-cli
+weown-cli gateway status --cluster jaimsnet-core-doks
+```
+
+---
+
+### Lite Droplet Deployment (WeOwn Lite AI tier)
+
+For deploying a single customer AnythingLLM instance on a DO Droplet (not K8s):
+
+```bash
+# 1. Install CLI
+cd iac/weown-cli && uv pip install -e .
+
+# 2. Authenticate
+doctl auth init  # one-time only
+
+# 3. Deploy interactively
+weown-cli deploy
+# Prompts for: customer name, domain, region, SSH key
+
+# 4. Monitor
+weown-cli list                     # See all deployments
+weown-cli logs <deployment-name>   # Tail cloud-init logs
+
+# 5. Verify
+curl -I https://<customer-domain>  # HTTP/2 200
+```
+
+---
+
+### Step-by-Step: Pro (DOKS per-customer)
+
+```bash
+# 1. Navigate to environment
+cd iac/opentofu/environments/pro
+
+# 2. Initialize
+tofu init
+
+# 3. Plan with customer variables
+tofu plan \
+  -var="customer_slug=acme" \
+  -var="customer_name=Acme Corp" \
+  -var="customer_domain=acme.pro.weown.agency" \
+  -var="autoscale_max=3"
+
+# 4. Apply
+tofu apply -auto-approve
+
+# 5. Save kubeconfig
+doctl kubernetes cluster kubeconfig save doks-acme
+
+# 6. Verify
+kubectl get nodes
+kubectl get pods -A
+
+# 7. Verify endpoint
+curl -I https://acme.pro.weown.agency
+# Expected: HTTP/2 200
+```
+
+---
+
+### Teardown — Gateway Stack (Application Layer Only)
+
+Removes all Kubernetes application resources without touching core infrastructure (DOKS, PostgreSQL, VPC remain).
+
+```bash
+# Remove all gateway application resources
+# Order: AnythingLLM → LiteLLM → Langfuse → Redis → namespaces
+weown-cli gateway destroy --cluster jaimsnet-core-doks --yes
+
+# Verify all application pods removed
+kubectl get pods -A | grep -E "gateway|observability|anythingllm"
+# Should return empty
+
+# Optionally clean up Infisical operator
+helm uninstall infisical-operator -n infisical
+```
+
+### Teardown — Core Infrastructure (via OpenTofu)
+
+> ⚠️ **Destructive** — removes DOKS cluster, managed PostgreSQL, VPC, and Load Balancer. All data in the database will be lost.
+
+```bash
+cd iac/opentofu/environments/production
+
+# Review what will be destroyed
+tofu plan -destroy
+
+# Destroy all core infrastructure
+tofu destroy -auto-approve
+# Duration: ~10-15 minutes
+# Expected: "Destroy complete! Resources: N destroyed."
+
+# Verify in DigitalOcean console
+doctl kubernetes cluster list    # should be empty
+doctl database list              # should be empty
+```
+
+### Teardown — Lite Droplet
+
+```bash
+# Destroy a specific droplet deployment
+weown-cli destroy <deployment-name>
+
+# Verify
+doctl compute droplet list | grep <deployment-name>
+# Should return empty
+```
 
 ---
 

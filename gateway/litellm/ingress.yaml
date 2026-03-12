@@ -24,10 +24,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - litellm.jAIMS.app
+        - litellm.jaims.app
       secretName: litellm-tls
   rules:
-    - host: litellm.jAIMS.app
+    - host: litellm.jaims.app
       http:
         paths:
           - path: /

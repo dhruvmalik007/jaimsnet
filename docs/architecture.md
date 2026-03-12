@@ -22,6 +22,7 @@ System architecture overview for jAIMSnet — AI infrastructure management platf
 | Metrics Stack | Prometheus + Grafana + Mimir + Loki + Alloy | DOKS - monitoring namespace | 📋 Planned Phase 2 |
 | Uptime Monitoring | Uptime Kuma | Docker Droplet | 🔄 In Progress |
 | IaC | OpenTofu | Managed locally | 🔄 In Progress |
+| Secrets Flow | Infisical | [Secret Management Guide](./secret-management.md) | ✅ Documented |
 | GitOps | ArgoCD | DOKS - argocd namespace | 📋 Planned Phase 3 |
 
 ## Infrastructure

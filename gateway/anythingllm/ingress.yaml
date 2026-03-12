@@ -7,25 +7,22 @@ metadata:
     app.kubernetes.io/name: anythingllm
     app.kubernetes.io/component: ui
   annotations:
-    kubernetes.io/ingress.class: "nginx"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    # WebSocket support for AnythingLLM real-time features
+    # WebSocket support via native NGINX annotations (no configuration-snippet needed)
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection "upgrade";
+    nginx.ingress.kubernetes.io/proxy-set-headers: "anythingllm/custom-headers"
     # Body size for document uploads
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
 spec:
+  ingressClassName: nginx
   tls:
     - hosts:
-        - anythingllm.jAIMS.app
+        - anythingllm.jaims.app
       secretName: anythingllm-tls
   rules:
-    - host: anythingllm.jAIMS.app
+    - host: anythingllm.jaims.app
       http:
         paths:
           - path: /
