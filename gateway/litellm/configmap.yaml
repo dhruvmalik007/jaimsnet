@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: gateway
+  labels:
+    app.kubernetes.io/name: litellm
+    app.kubernetes.io/component: gateway
+data:
+  config.yaml: |
+    general_settings:
+      master_key: "os.environ/LITELLM_MASTER_KEY"
+      database_url: "os.environ/DATABASE_URL"
+      database_connection_pool_limit: 20
+      store_model_in_db: true
+
+    litellm_settings:
+      # Success / failure callback to Langfuse
+      success_callback: ["langfuse"]
+      failure_callback: ["langfuse"]
+      langfuse_host: "os.environ/LANGFUSE_HOST"
+      langfuse_secret: "os.environ/LANGFUSE_SECRET_KEY"
+      langfuse_public_key: "os.environ/LANGFUSE_PUBLIC_KEY"
+      # Redact sensitive data from traces
+      turn_off_message_logging: false
+
+    cache:
+      type: "redis"
+      host: "redis.gateway.svc.cluster.local"
+      port: 6379
+      password: "os.environ/REDIS_PASSWORD"
+      ttl: 300                # Cache TTL in seconds
+
+    model_list:
+      # ─────────────────────────────────────
+      # Phase 1: OpenRouter (via cloud API)
+      # ─────────────────────────────────────
+      - model_name: "gpt-4o"
+        litellm_params:
+          model: "openrouter/openai/gpt-4o"
+          api_key: "os.environ/OPENROUTER_API_KEY"
+          api_base: "https://openrouter.ai/api/v1"
+
+      - model_name: "gpt-4o-mini"
+        litellm_params:
+          model: "openrouter/openai/gpt-4o-mini"
+          api_key: "os.environ/OPENROUTER_API_KEY"
+          api_base: "https://openrouter.ai/api/v1"
+
+      - model_name: "claude-3-5-sonnet"
+        litellm_params:
+          model: "openrouter/anthropic/claude-3-5-sonnet-20241022"
+          api_key: "os.environ/OPENROUTER_API_KEY"
+          api_base: "https://openrouter.ai/api/v1"
+
+      # Default catch-all: OpenRouter auto-router
+      - model_name: "default"
+        litellm_params:
+          model: "openrouter/auto"
+          api_key: "os.environ/OPENROUTER_API_KEY"
+          api_base: "https://openrouter.ai/api/v1"
+
+      # ─────────────────────────────────────
+      # Phase 2 placeholder: vLLM GPU Droplet (disabled until Phase 2)
+      # ─────────────────────────────────────
+      # - model_name: "llama3-70b"
+      #   litellm_params:
+      #     model: "openai/llama3-70b"
+      #     api_base: "http://vllm-gpu.vpc.internal:8000/v1"
+      #     api_key: "os.environ/VLLM_API_KEY"
