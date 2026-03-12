@@ -8,9 +8,10 @@ import hashlib
 from pathlib import Path
 from pydo import Client
 from rich.console import Console
+from rich.console import Console
 from rich.panel import Panel
 
-from weown_cli.auth import get_doctl_token, verify_auth
+from weown_cli.auth import get_token, verify_auth, get_infisical_client, save_local_token, delete_local_token
 from weown_cli.state import StateIsolationEngine
 
 class EpilogTyper(typer.Typer):
@@ -32,6 +33,7 @@ app = EpilogTyper(
     ),
     epilog=(
         "Examples:\n"
+        "  weown-cli login          Authenticate securely without doctl\n"
         "  weown-cli deploy         Launch an interactive deployment wizard\n"
         "  weown-cli list           Show all active & inactive nodes\n"
         "  weown-cli logs acme-01   Tail the startup logs for a node\n"
@@ -41,19 +43,31 @@ app = EpilogTyper(
 console = Console()
 engine = StateIsolationEngine()
 
+advanced_app = typer.Typer(help="Advanced OpenTofu operations (force-unlock, graph, login, logout).")
+app.add_typer(advanced_app, name="advanced")
+
+state_app = typer.Typer(help="Advanced OpenTofu state management operations.")
+app.add_typer(state_app, name="state")
+
 # The canonical source for our IaC templates
-IAC_SOURCE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "environments" / "lite"
+IAC_SOURCE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "opentofu" / "environments" / "lite"
 
 def get_valid_token():
-    token = get_doctl_token()
+    token = get_token()
     if verify_auth(token):
         return token
         
-    console.print("[yellow]Could not find a valid DigitalOcean token in doctl or environment.[/yellow]")
+    console.print("[yellow]Could not find a valid DigitalOcean token in local credentials, env, or doctl.[/yellow]")
     token = questionary.password("Please enter your DigitalOcean Personal Access Token:").ask()
     if not verify_auth(token):
         console.print("[red]❌ Invalid Token![/red]")
         raise typer.Exit(1)
+        
+    save_token = questionary.confirm("Would you like to securely save this token locally for future use?").ask()
+    if save_token:
+        save_local_token(token)
+        console.print("[green]Token saved securely.[/green]")
+        
     return token
 
 BANNER = r"""[bold cyan]
@@ -65,6 +79,47 @@ BANNER = r"""[bold cyan]
 [/bold cyan]
 [bold white]jAIMSNet AI Gateway Setup[/bold white]
 """
+
+# --- AUTH COMMANDS ---
+
+@app.command()
+def login(token: str = typer.Option(None, prompt=True, hide_input=True, help="DigitalOcean Personal Access Token")):
+    """Authenticate securely with DigitalOcean locally, replacing doctl usage."""
+    console.print("Verifying DigitalOcean token...")
+    if verify_auth(token):
+        save_local_token(token)
+        console.print("[bold green]✅ Authentication successful! Token saved securely.[/bold green]")
+    else:
+        console.print("[bold red]❌ Invalid DigitalOcean token![/bold red]")
+        raise typer.Exit(1)
+
+@app.command()
+def logout():
+    """Remove locally securely stored DigitalOcean token."""
+    delete_local_token()
+    console.print("[bold green]✅ Logged out successfully.[/bold green]")
+
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def exec(ctx: typer.Context):
+    """Execute a local command (e.g. 'tofu plan') injecting the secure DigitalOcean token."""
+    token = get_valid_token()
+    env = os.environ.copy()
+    env["DIGITALOCEAN_TOKEN"] = token
+    env["TF_VAR_do_token"] = token
+    
+    cmd = ctx.args
+    if not cmd:
+        console.print("[red]No command provided to execute. Try: weown-cli exec tofu plan[/red]")
+        raise typer.Exit(1)
+        
+    try:
+        subprocess.run(cmd, env=env, check=True)
+    except subprocess.CalledProcessError as e:
+        console.print(f"[bold red]Command failed with exit code {e.returncode}[/bold red]")
+        raise typer.Exit(e.returncode)
+    except FileNotFoundError:
+        console.print(f"[bold red]Command not found: {cmd[0]}[/bold red]")
+        raise typer.Exit(1)
 
 @app.command()
 def deploy():
@@ -178,13 +233,38 @@ def deploy():
         console.print("\n[red]Cancelled by user[/red]")
         raise typer.Exit()
         
-    litellm_api_key = questionary.password(
-        "LiteLLM Gateway API Key for this instance:"
-    ).ask()
+    # Attempt to fetch API Key from Infisical securely
+    infisical_client = get_infisical_client()
+    litellm_api_key = ""
     
-    if litellm_api_key is None:
-        console.print("\n[red]Cancelled by user[/red]")
-        raise typer.Exit()
+    if infisical_client:
+        console.print("[dim] securely fetching LiteLLM API Key from Infisical Cloud...[/dim]")
+        try:
+            # Note: Hardcoded project_id should ideally be an env var. We use project_slug or let user supply INFISICAL_PROJECT_ID
+            project_id = os.environ.get("INFISICAL_PROJECT_ID")
+            
+            if not project_id:
+                console.print("[yellow]INFISICAL_PROJECT_ID environment variable not set. Falling back to manual prompt.[/yellow]")
+            else:
+                secret = infisical_client.secrets.get_secret_by_name(
+                    secret_name="LITELLM_MASTER_KEY",
+                    project_id=project_id,
+                    environment_slug="production",
+                    secret_path="/gateway/litellm"
+                )
+                litellm_api_key = secret.secret_value
+                console.print("[green]✅ LiteLLM API Key fetched from Infisical![/green]")
+        except Exception as e:
+            console.print(f"[yellow]Failed to fetch from Infisical ({e}). Falling back to manual prompt.[/yellow]")
+            
+    if not litellm_api_key:
+        litellm_api_key = questionary.password(
+            "LiteLLM Gateway API Key for this instance (Failed to fetch from Infisical):"
+        ).ask()
+        
+        if litellm_api_key is None:
+            console.print("\n[red]Cancelled by user[/red]")
+            raise typer.Exit()
     
     confirm = questionary.confirm("Are you ready to deploy? Charges will apply to your DO account.").ask()
     if confirm is None or not confirm:
@@ -333,6 +413,88 @@ def list():
         console.print(f"\n[bold dim]Inactive / Destroyed Deployments ({len(inactive_deployments)}):[/bold dim]")
         for d in inactive_deployments:
             console.print(f" - [dim]{d}[/dim]")
+
+# --- ADVANCED COMMANDS ---
+
+@advanced_app.command("force-unlock")
+def advanced_force_unlock(
+    deployment_name: str = typer.Argument(..., help="Name of the deployment"),
+    lock_id: str = typer.Argument(..., help="The lock ID to force unlock")
+):
+    """Force unlock the OpenTofu state for a specific deployment."""
+    token = get_valid_token()
+    isolated_dir = engine.get_isolated_path(token, deployment_name)
+    engine.execute_generic_tofu(["force-unlock", "-force", lock_id], isolated_dir)
+
+@advanced_app.command("graph")
+def advanced_graph(
+    deployment_name: str = typer.Argument(..., help="Name of the deployment"),
+):
+    """Output the dependency graph of the associated OpenTofu environment."""
+    token = get_valid_token()
+    isolated_dir = engine.get_isolated_path(token, deployment_name)
+    # Stream the dot output natively to stdout for pipelining (e.g., `| dot -Tsvg > out.svg`)
+    engine.execute_generic_tofu(["graph"], isolated_dir, stream_output=True)
+
+
+
+# --- STATE COMMANDS ---
+
+@state_app.command("list")
+def state_list(deployment_name: str = typer.Argument(..., help="Name of the deployment")):
+    """List resources in the OpenTofu state."""
+    token = get_valid_token()
+    isolated_dir = engine.get_isolated_path(token, deployment_name)
+    engine.execute_generic_tofu(["state", "list"], isolated_dir, stream_output=True)
+
+@state_app.command("show")
+def state_show(
+    deployment_name: str = typer.Argument(..., help="Name of the deployment"),
+    address: str = typer.Argument(..., help="Resource address to show")
+):
+    """Show detailed attributes of a single resource in the OpenTofu state."""
+    token = get_valid_token()
+    isolated_dir = engine.get_isolated_path(token, deployment_name)
+    engine.execute_generic_tofu(["state", "show", address], isolated_dir, stream_output=True)
+
+@state_app.command("rm")
+def state_rm(
+    deployment_name: str = typer.Argument(..., help="Name of the deployment"),
+    address: str = typer.Argument(..., help="Resource address to remove")
+):
+    """Remove a resource from the OpenTofu state without destroying it."""
+    token = get_valid_token()
+    isolated_dir = engine.get_isolated_path(token, deployment_name)
+    engine.execute_generic_tofu(["state", "rm", address], isolated_dir, stream_output=True)
+
+@state_app.command("mv")
+def state_mv(
+    deployment_name: str = typer.Argument(..., help="Name of the deployment"),
+    source: str = typer.Argument(..., help="Current resource address"),
+    destination: str = typer.Argument(..., help="New resource address")
+):
+    """Move/rename an item in the OpenTofu state."""
+    token = get_valid_token()
+    isolated_dir = engine.get_isolated_path(token, deployment_name)
+    engine.execute_generic_tofu(["state", "mv", source, destination], isolated_dir, stream_output=True)
+
+@state_app.command("pull")
+def state_pull(deployment_name: str = typer.Argument(..., help="Name of the deployment")):
+    """Pull current state and output to stdout."""
+    token = get_valid_token()
+    isolated_dir = engine.get_isolated_path(token, deployment_name)
+    engine.execute_generic_tofu(["state", "pull"], isolated_dir, stream_output=True)
+
+@state_app.command("push")
+def state_push(
+    deployment_name: str = typer.Argument(..., help="Name of the deployment"),
+    path: str = typer.Argument(..., help="Path to the state file to push")
+):
+    """Push local state file to remote state."""
+    token = get_valid_token()
+    isolated_dir = engine.get_isolated_path(token, deployment_name)
+    file_path = str(Path(path).expanduser().resolve())
+    engine.execute_generic_tofu(["state", "push", file_path], isolated_dir, stream_output=True)
 
 if __name__ == "__main__":
     app()

@@ -27,13 +27,13 @@ class StateIsolationEngine:
         """Copy main.tf, variables.tf and rewrite relative module paths to absolute."""
         tf_files = list(source_dir.glob("*.tf"))
         
-        # We need absolute path to the modules directory for rewriting
-        modules_dir_absolute = (source_dir.parent.parent / "modules").resolve()
+        # We need absolute path to the standardized opentofu modules directory for rewriting
+        modules_dir_absolute = (source_dir.parent.parent / "opentofu" / "modules").resolve()
         
         for tf_file in tf_files:
             content = tf_file.read_text()
             # Replace relative paths to modules with absolute paths
-            content = content.replace("../../modules", str(modules_dir_absolute))
+            content = content.replace("../../opentofu/modules", str(modules_dir_absolute))
             
             dest_file = dest_dir / tf_file.name
             dest_file.write_text(content)
@@ -98,6 +98,35 @@ class StateIsolationEngine:
                 
         return "\\n".join(output_lines)
         
+    def execute_generic_tofu(self, args: List[str], isolated_dir: Path, stream_output: bool = True) -> subprocess.CompletedProcess:
+        """Runs a generic tofu command inside the isolated state directory."""
+        if not isolated_dir.exists():
+            raise FileNotFoundError(f"Deployment directory not found: {isolated_dir}")
+
+        # The global login/logout commands shouldn't use -chdir to avoid polluting the state,
+        # but the advanced prompt requires it for workspace separation depending on the command.
+        # However, `login` and `logout` interact with global user configs, so we pass -chdir only if it's not a global auth command.
+        cmd = ["tofu"]
+        if args[0] not in ["login", "logout"]:
+            cmd.append(f"-chdir={str(isolated_dir)}")
+        cmd.extend(args)
+
+        env = os.environ.copy()
+        
+        self.console.print(f"[dim]Executing: {' '.join(cmd)}[/dim]")
+        
+        try:
+            return subprocess.run(
+                cmd,
+                env=env,
+                capture_output=not stream_output,
+                text=True,
+                check=True
+            )
+        except subprocess.CalledProcessError as e:
+            msg = e.stderr if not stream_output else "Execution failed with non-zero exit code"
+            self.console.print(f"[bold red]❌ Command returned exit code {e.returncode}:[/bold red]\n{msg}")
+            raise
     def is_active_deployment(self, isolated_dir: Path) -> bool:
         """Check if the state contains actively provisioned resources."""
         if not (isolated_dir / "terraform.tfstate").exists():

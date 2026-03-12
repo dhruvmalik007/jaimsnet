@@ -10,7 +10,8 @@ dependencies = [
     "typer",
     "rich",
     "questionary",
-    "pydo"
+    "pydo",
+    "infisicalsdk",
 ]
 
 [project.scripts]

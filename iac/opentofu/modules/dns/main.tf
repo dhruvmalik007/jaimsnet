@@ -31,7 +31,7 @@ resource "digitalocean_record" "txt" {
 
   domain = digitalocean_domain.zone.name
   type   = "TXT"
-  # Standardize naming: _dmarc for DMARC, @ for SPF/verification in case of not seeing explicit naming.
+  # Standardize naming: _dmarc for DMARC, @ for SPF/verification in case of temporary naming.
   name  = try(regex("_dmarc", each.key) == "_dmarc" ? "_dmarc" : "@", "@")
   value = each.value
   ttl   = 3600
