@@ -187,36 +187,36 @@ Customer-facing AI interfaces (like AnythingLLM) are deployed via the `weown-cli
 iac/
 ├── README.md
 │
-├── modules/
-│   │
-│   ├── droplet/                    # Single Droplet (Lite pipeline)
-│   │   ├── main.tf
-│   │   ├── variables.tf
-│   │   ├── outputs.tf
-│   │   └── templates/
-├── doks/                       # DOKS Cluster (Pro pipeline)
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-├── networking/                 # VPC + DNS + DO Project
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   ├── database/                   # Managed PostgreSQL v18
-│   │   ├── main.tf
-│   │   ├── variables.tf
-│   │   └── outputs.tf
-│   │
-│   ├── gpu/                        # MI300X / MI325X provisioning
-│   │   ├── main.tf
-│   │   ├── variables.tf
-│   │   └── outputs.tf
-│   │
-│   ├── internal-tools/             # 🆕 Internal services
-│   │   ├── n8n/
+├── opentofu/
+│   ├── modules/
+│   │   ├── droplet/                    # Single Droplet (Lite pipeline)
+│   │   │   ├── main.tf
+│   │   │   ├── variables.tf
+│   │   │   ├── outputs.tf
+│   │   │   └── templates/
+│   │   ├── doks/                       # DOKS Cluster (Pro pipeline)
 │   │   │   ├── main.tf
 │   │   │   ├── variables.tf
 │   │   │   └── outputs.tf
+│   │   └── networking/                 # VPC + DNS + DO Project
+│   │       ├── main.tf
+│   │       ├── variables.tf
+│   │       ├── outputs.tf
+│   │       ├── database/               # Managed PostgreSQL v18
+│   │       │   ├── main.tf
+│   │       │   ├── variables.tf
+│   │       │   └── outputs.tf
+│   │       ├── gpu/                    # MI300X / MI325X provisioning
+│   │       │   ├── main.tf
+│   │       │   ├── variables.tf
+│   │       │   └── outputs.tf
+│   │       └── internal-tools/         # 🆕 Internal services
+│   │           └── n8n/
+│   │               ├── main.tf
+│   │               ├── variables.tf
+│   │               └── outputs.tf
+│
+│   └── environments/                   # Environment definitions (e.g., dev, staging, prod)
 │   │   └── vaultwarden/
 │   │       ├── main.tf
 │   │       ├── variables.tf
