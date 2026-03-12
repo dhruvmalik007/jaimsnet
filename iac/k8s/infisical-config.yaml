@@ -1,0 +1,14 @@
+# Shared Infisical project configuration, referenced by InfisicalSecret manifests.
+# The projectId is stored here to avoid duplication across namespaces.
+# Deployed to the infisical namespace so it can be referenced cross-namespace as needed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jaimsnet-infisical-config
+  namespace: infisical
+  labels:
+    app.kubernetes.io/part-of: jaimsnet
+data:
+  projectId: ""
+  envSlug: "prod"
+  hostAPI: "https://app.infisical.com"
