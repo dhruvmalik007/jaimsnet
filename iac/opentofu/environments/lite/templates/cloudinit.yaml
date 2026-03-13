@@ -13,7 +13,7 @@ packages:
   - lsb-release
 
 write_files:
-  # Configure Docker Log Rotation
+  # Docker log rotation — prevent unbounded log growth
   - path: /etc/docker/daemon.json
     content: |
       {
@@ -24,14 +24,14 @@ write_files:
         }
       }
 
-  # Caddy Reverse Proxy Configuration
+  # Caddy reverse proxy — terminates TLS and proxies to AnythingLLM
   - path: /etc/caddy/Caddyfile
     content: |
       ${fqdn != "" ? fqdn : ":80"} {
         reverse_proxy 127.0.0.1:3001
       }
 
-  # AnythingLLM Environment Configuration (Centralized Gateway)
+  # AnythingLLM environment — connects to the centralized jAIMSnet AI Gateway
   - path: /opt/anythingllm/storage/.env
     owner: root:root
     permissions: '0600'
@@ -39,15 +39,13 @@ write_files:
       LLM_PROVIDER=generic-openai
       GENERIC_OPENAI_BASE_PATH=${litellm_base_url}/v1
       GENERIC_OPENAI_API_KEY=${litellm_api_key}
-      # Set a default model if desired, but LiteLLM can handle default routing
       GENERIC_OPENAI_MODEL_PREF=gpt-4o-mini
 
-  # Modular Docker Compose file for AnythingLLM and Watchtower
+  #NOTE:  No Docker Compose profiles are used; the service is either present or absent.
   - path: /opt/anythingllm/docker-compose.yml
     owner: root:root
     permissions: '0644'
     content: |
-      version: '3.8'
       services:
         anythingllm:
           image: mintplexlabs/anythingllm:latest
@@ -57,14 +55,14 @@ write_files:
             - "3001:3001"
           volumes:
             - ./storage:/app/server/storage
-            - /var/run/docker.sock:/var/run/docker.sock
           deploy:
             resources:
               limits:
                 memory: 2g
-        
-        # Watchtower is optional. If enabled via the Terraform variable, it runs alongside AnythingLLM.
-        # Otherwise, the container starts but we can ignore it if we just want basic deployment testing.
+      %{ if enable_watchtower }
+
+        # Watchtower: watches the anythingllm container and auto-updates it
+        # when a new image is pushed to the registry. Polls every 3600 seconds.
         watchtower:
           image: containrrr/watchtower
           container_name: watchtower
@@ -72,8 +70,7 @@ write_files:
           volumes:
             - /var/run/docker.sock:/var/run/docker.sock
           command: --interval 3600 anythingllm
-          profiles:
-            - "${enable_watchtower == true ? "default" : "disabled"}"
+      %{ endif }
 
 runcmd:
   # Install Caddy
@@ -94,12 +91,10 @@ runcmd:
   - systemctl enable docker
   - systemctl start docker
 
-  # Deploy modular docker-compose stack
+  # Deploy AnythingLLM stack
   - mkdir -p /opt/anythingllm/storage
   - cd /opt/anythingllm
-  
-  # Deploy AnythingLLM. Watchtower is started automatically ONLY if the 'default' profile applies to it.
   - docker rm -f anythingllm watchtower 2>/dev/null || true
   - docker compose up -d
 
-final_message: "The system has been successfully provisioned with AnythingLLM using Docker Compose."
+final_message: "WeOwn Lite AI — AnythingLLM provisioned successfully with Watchtower enabled."
