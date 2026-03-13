@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: anythingllm
-  labels:
-    name: anythingllm
-    app.kubernetes.io/managed-by: weown-cli
-    app.kubernetes.io/part-of: jaimsnet
