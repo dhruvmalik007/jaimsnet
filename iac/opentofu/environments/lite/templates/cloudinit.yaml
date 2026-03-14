@@ -41,7 +41,7 @@ write_files:
       GENERIC_OPENAI_API_KEY=${litellm_api_key}
       GENERIC_OPENAI_MODEL_PREF=gpt-4o-mini
 
-  #NOTE:  No Docker Compose profiles are used; the service is either present or absent.
+  # NOTE:Watchtower is conditionally written into docker-compose.yml.
   - path: /opt/anythingllm/docker-compose.yml
     owner: root:root
     permissions: '0644'
@@ -60,7 +60,6 @@ write_files:
               limits:
                 memory: 2g
       %{ if enable_watchtower }
-
         # Watchtower: watches the anythingllm container and auto-updates it
         # when a new image is pushed to the registry. Polls every 3600 seconds.
         watchtower:
@@ -92,9 +91,10 @@ runcmd:
   - systemctl start docker
 
   # Deploy AnythingLLM stack
+  # cd and docker compose are combined in one shell invocation so the working along with directory is inherited correctly (separate runcmd lines lose cd state).
   - mkdir -p /opt/anythingllm/storage
-  - cd /opt/anythingllm
   - docker rm -f anythingllm watchtower 2>/dev/null || true
-  - docker compose up -d
+  - sh -c 'cd /opt/anythingllm && ${enable_watchtower ? "COMPOSE_PROFILES=watchtower" : ""} 
+  - docker compose up -d'
 
 final_message: "WeOwn Lite AI — AnythingLLM provisioned successfully with Watchtower enabled."
