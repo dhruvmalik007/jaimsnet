@@ -69,5 +69,5 @@ variable "kuma_ip" {
 variable "allowed_ssh_cidrs" {
   type        = list(string)
   description = "List of allowed IPv4/IPv6 CIDR blocks for SSH access to the architecture (e.g. Uptime Kuma). Restrict to your team's IPs in production."
-  default     = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+  default     = ["127.0.0.1/32"]
 }
