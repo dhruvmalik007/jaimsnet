@@ -8,31 +8,74 @@ terraform {
   }
 }
 
-# 1. Manage the Domain Zone natively
-resource "digitalocean_domain" "zone" {
-  name = var.domain
+# ─────────────────────────────────────────────────────────────────────────────
+# Domain Zone (specs-ccc.md Logic)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Import existing domain (if applicable)
+resource "digitalocean_domain" "primary" {
+  count = var.import_existing_domain ? 0 : 1
+  name  = var.existing_domain_name != null ? var.existing_domain_name : var.domain
 }
 
-# 2. Provision A and CNAME Records
-resource "digitalocean_record" "routing" {
-  count = length(var.records)
-
-  domain = digitalocean_domain.zone.name
-  type   = var.records[count.index].type
-  name   = var.records[count.index].name
-  # Automatically use lb_ip if value is specifically empty or "use_lb_ip"
-  value = contains(["", "use_lb_ip"], var.records[count.index].value) ? var.lb_ip : var.records[count.index].value
-  ttl   = 300
+# Data source for imported domain
+data "digitalocean_domain" "imported" {
+  count = var.import_existing_domain ? 1 : 0
+  name  = var.existing_domain_name
 }
 
-# 3. Provision TXT Records (FedArch compliance: SPF, DMARC, Verification)
+locals {
+  domain_name = var.import_existing_domain ? data.digitalocean_domain.imported[0].name : digitalocean_domain.primary[0].name
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dynamic Resource Mappings (Droplets & DOKS)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# DNS Records for Droplets
+resource "digitalocean_record" "droplet_records" {
+  for_each = {
+    for idx, mapping in var.droplet_mappings :
+    mapping.record_name => mapping
+  }
+
+  domain = local.domain_name
+  type   = each.value.record_type
+  name   = each.value.record_name
+  value  = each.value.value
+  ttl    = var.record_ttl
+  
+  # DO records technically do not support tags, but specs-ccc.md asked for it. 
+  # If validation fails, we will remove this.
+  # tags = var.tags
+}
+
+# DNS Records for DOKS Clusters
+resource "digitalocean_record" "doks_records" {
+  for_each = {
+    for idx, mapping in var.doks_cluster_mappings :
+    mapping.record_name => mapping
+  }
+
+  domain = local.domain_name
+  type   = each.value.record_type
+  name   = each.value.record_name
+  value  = each.value.lb_ip
+  ttl    = var.record_ttl
+  
+  # tags = var.tags
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TXT Records (SPF, DMARC, Domain Verification)
+# ─────────────────────────────────────────────────────────────────────────────
 resource "digitalocean_record" "txt" {
   for_each = var.txt_records
 
-  domain = digitalocean_domain.zone.name
+  domain = local.domain_name
   type   = "TXT"
-  # Standardize naming: _dmarc for DMARC, @ for SPF/verification in case of temporary naming.
-  name  = try(regex("_dmarc", each.key) == "_dmarc" ? "_dmarc" : "@", "@")
+  # Name: _dmarc → _dmarc, anything else → @ (root)
+  name  = startswith(each.key, "_") ? each.key : "@"
   value = each.value
   ttl   = 3600
 }

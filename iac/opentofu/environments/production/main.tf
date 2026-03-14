@@ -47,81 +47,7 @@ module "doks" {
   ]
 }
 
-# ------------------------------------------------------------------------------
-# 4. ArgoCD Bootstrap via Helm
-# ------------------------------------------------------------------------------
-# Create the argocd namespace first
-resource "kubernetes_namespace" "argocd" {
-  metadata {
-    name = "argocd"
-  }
-  depends_on = [module.doks]
-}
 
-# Install ArgoCD via official Helm chart
-resource "helm_release" "argocd" {
-  name       = "argocd"
-  repository = "https://argoproj.github.io/argo-helm"
-  chart      = "argo-cd"
-  version    = "6.6.0" # Use a stable chart version 
-  namespace  = kubernetes_namespace.argocd.metadata[0].name
-
-  values = [
-    yamlencode({
-      server = {
-        service = {
-          type = "ClusterIP"
-        }
-        insecure = true
-      }
-    })
-  ]
-
-  depends_on = [
-    kubernetes_namespace.argocd
-  ]
-}
-
-# ------------------------------------------------------------------------------
-# 5. GitOps Bootstrap (App of Apps Pattern)
-# ------------------------------------------------------------------------------
-resource "helm_release" "argocd_apps" {
-  name       = "argocd-apps"
-  repository = "https://argoproj.github.io/argo-helm"
-  chart      = "argocd-apps"
-  version    = "1.4.1"
-  namespace  = kubernetes_namespace.argocd.metadata[0].name
-
-  depends_on = [
-    helm_release.argocd
-  ]
-
-  values = [
-    yamlencode({
-      applications = {
-        jaimsnet-root = {
-          namespace = "argocd"
-          project   = "default"
-          source = {
-            repoURL        = "https://github.com/dhruvmalik007/jaimsnet.git"
-            targetRevision = "HEAD"
-            path           = "k8s/bootstrap"
-          }
-          destination = {
-            server    = "https://kubernetes.default.svc"
-            namespace = "argocd" # Deploys further applications into Argo namespace
-          }
-          syncPolicy = {
-            automated = {
-              prune    = true
-              selfHeal = true
-            }
-          }
-        }
-      }
-    })
-  ]
-}
 
 # ------------------------------------------------------------------------------
 # 6. DigitalOcean Load Balancer
@@ -129,10 +55,10 @@ resource "helm_release" "argocd_apps" {
 module "load_balancer" {
   source = "../../modules/load-balancer"
 
-  name            = "jaimsnet-ingress-lb-${var.environment}"
-  region          = var.region
-  vpc_uuid        = module.vpc.vpc_id
-  doks_cluster_id = module.doks.cluster_id
+  name              = "jaimsnet-ingress-lb-${var.environment}"
+  region            = var.region
+  vpc_uuid          = module.vpc.vpc_id
+  doks_cluster_name = module.doks.cluster_name
 
   # Default ingress-nginx port routing configuration
   http_node_port  = 30080
@@ -147,28 +73,32 @@ module "dns" {
   count  = var.domain != "" ? 1 : 0
 
   domain = var.domain
-  lb_ip  = module.load_balancer.lb_ip
 
-  # Conditionally build the list of DNS records based on the fedarch and weown lite/pro setup
-  records = [
+  doks_cluster_mappings = [
     for r in [
-      { name = "litellm", type = "A", value = "use_lb_ip" },
-      { name = "langfuse", type = "A", value = "use_lb_ip" },
-      var.environment == "pro" ? { name = "*", type = "A", value = "use_lb_ip" } : null,
-      var.kuma_ip != "" ? { name = "kuma", type = "A", value = var.kuma_ip } : null
+      { cluster_id = module.doks.cluster_name, record_name = "litellm", record_type = "A", lb_ip = module.load_balancer.lb_ip },
+      { cluster_id = module.doks.cluster_name, record_name = "langfuse", record_type = "A", lb_ip = module.load_balancer.lb_ip },
+      var.environment == "pro" ? { cluster_id = module.doks.cluster_name, record_name = "*", record_type = "A", lb_ip = module.load_balancer.lb_ip } : null
+    ] : r if r != null
+  ]
+
+  droplet_mappings = [
+    for r in [
+      var.kuma_ip != "" ? { droplet_id = "kuma", record_name = "kuma", record_type = "A", value = var.kuma_ip } : null
     ] : r if r != null
   ]
 
   # Standard FedArch TXT records for SPF/DMARC policies
-  txt_records = {
-    spf    = "v=spf1 include:_spf.google.com ~all"
-    _dmarc = "v=DMARC1; p=quarantine; rua=mailto:security@${var.domain}"
-  }
+  # txt_records = {
+  #   spf    = "v=spf1 include:_spf.google.com ~all"
+  #   _dmarc = "v=DMARC1; p=quarantine; rua=mailto:security@${var.domain}"
+  # }
 
   depends_on = [
     module.load_balancer
   ]
 }
+
 
 # ------------------------------------------------------------------------------
 # 8. Uptime Kuma Monitoring Droplet

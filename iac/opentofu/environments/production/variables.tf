@@ -53,6 +53,13 @@ variable "domain" {
   default     = ""
 }
 
+variable "manage_domain" {
+  type        = bool
+  description = "Set to true to create a new domain zone in DigitalOcean. in case of false, its referenced to an existing domain zone (import or externally managed)."
+  default     = true
+}
+
+
 variable "kuma_ip" {
   type        = string
   description = "The IP address of the Uptime Kuma instance. If set, an A record will be created for kuma."
@@ -61,6 +68,6 @@ variable "kuma_ip" {
 
 variable "allowed_ssh_cidrs" {
   type        = list(string)
-  description = "List of allowed IPv4/IPv6 CIDR blocks for SSH access to the architecture (e.g. Uptime Kuma)."
-  default     = ["0.0.0.0/0", "::/0"]
+  description = "List of allowed IPv4/IPv6 CIDR blocks for SSH access to the architecture (e.g. Uptime Kuma). Restrict to your team's IPs in production."
+  default     = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
 }

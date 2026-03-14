@@ -29,8 +29,20 @@ OpenTofu module for managing DNS records for `jaims.app` and `jaims.network` via
 
 ## Planned Inputs
 
-| Variable | Type | Description |
-|---|---|---|
-| `domain` | `string` | Root domain name |
-| `lb_ip` | `string` | Load balancer IP for A records |
-| `records` | `list(object)` | List of DNS record definitions |
+| Variable | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `domain` | `string` | ✅ Yes | — | Root domain name (e.g., `jaims.app`) |
+| `manage_domain` | `bool` | No | `true` | `true` = Terraform creates/owns the zone. `false` = references existing zone (read-only). Use `tofu import` to migrate an existing zone. |
+| `lb_ip` | `string` | No | `""` | Load balancer IP used for A records when value is `""` or `"use_lb_ip"` |
+| `records` | `list(object)` | No | `[]` | List of DNS record definitions (`name`, `type`, `value`) |
+| `record_ttl` | `number` | No | `300` | TTL in seconds for A/CNAME records |
+
+## Outputs
+
+| Output | Description |
+|---|---|
+| `domain_name` | The domain name managed or referenced by this module |
+| `domain_urn` | URN of the domain zone (only when `manage_domain = true`) |
+| `manage_domain` | Echoes whether this module is managing (owning) the DNS zone |
+| `routing_records` | List of created A/CNAME record FQDNs |
+

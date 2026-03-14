@@ -13,15 +13,10 @@ variable "vpc_uuid" {
   description = "VPC ID where the Load Balancer will be provisioned"
 }
 
-variable "ip" {
-  type        = string
-  description = "The reserved IP address to attach to the load balancer"
-  default     = "129.212.240.75"
-}
 
-variable "doks_cluster_id" {
+variable "doks_cluster_name" {
   type        = string
-  description = "The ID of the DOKS cluster to dynamically fetch node droplet IDs"
+  description = "The name of the DOKS cluster to dynamically fetch node droplet IDs"
 }
 
 variable "http_node_port" {

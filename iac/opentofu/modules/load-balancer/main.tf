@@ -8,9 +8,9 @@ terraform {
   }
 }
 
-# Fetch the DOKS cluster tags
+# Fetch the DOKS cluster details
 data "digitalocean_kubernetes_cluster" "doks" {
-  name = var.doks_cluster_id
+  name = var.doks_cluster_name
 }
 
 # Fetch all Droplets matching the DOKS cluster tag
@@ -31,10 +31,10 @@ locals {
 }
 
 resource "digitalocean_loadbalancer" "lb" {
-  name        = var.name
-  region      = var.region
-  vpc_uuid    = var.vpc_uuid
-  
+  name     = var.name
+  region   = var.region
+  vpc_uuid = var.vpc_uuid
+
   # Forward HTTP 80 -> Ingress HTTP NodePort
   forwarding_rule {
     entry_protocol  = "http"

@@ -2,6 +2,10 @@ output "cluster_id" {
   description = "The ID of the DOKS cluster"
   value       = digitalocean_kubernetes_cluster.cluster.id
 }
+output "cluster_name" {
+  description = "The name of the DOKS cluster"
+  value       = digitalocean_kubernetes_cluster.cluster.name
+}
 
 output "cluster_endpoint" {
   description = "The URL of the API server for the cluster"
